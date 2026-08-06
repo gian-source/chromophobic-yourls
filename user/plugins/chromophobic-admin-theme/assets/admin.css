@@ -816,3 +816,45 @@ body.login header {
         transition: none !important;
     }
 }
+
+/*
+ * Kompakter QR-Dialog
+ * Setzt Safaris Standardpositionierung vollständig zurück.
+ */
+
+#chromophobic-qr-dialog[open] {
+    position: fixed !important;
+
+    inset: auto !important;
+    top: 50% !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: 50% !important;
+
+    display: block !important;
+
+    width: min(460px, calc(100vw - 32px)) !important;
+    height: fit-content !important;
+    min-height: 0 !important;
+    max-height: calc(100dvh - 32px) !important;
+
+    margin: 0 !important;
+    padding: 22px !important;
+    overflow-y: auto !important;
+
+    transform: translate(-50%, -50%) !important;
+}
+
+#chromophobic-qr-dialog h2 {
+    margin-top: 0 !important;
+}
+
+#chromophobic-qr-dialog form {
+    min-height: 0 !important;
+    margin: 14px 0 0 !important;
+    padding: 0 !important;
+}
+
+#chromophobic-qr-dialog .chromophobic-qr-close {
+    margin: 0 !important;
+}
