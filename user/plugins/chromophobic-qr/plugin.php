@@ -280,8 +280,12 @@ function chromophobic_qr_add_admin_action(
  * QR-Icon und Dialog-Design im Adminbereich.
  */
 function chromophobic_qr_admin_styles(
-    string $context
+    $hook_arguments
 ): void {
+    $context = is_array($hook_arguments)
+        ? (string) ($hook_arguments[0] ?? '')
+        : (string) $hook_arguments;
+
     if ($context !== 'index') {
         return;
     }
@@ -359,8 +363,12 @@ function chromophobic_qr_admin_styles(
  * Downloadfenster und JavaScript im Adminbereich.
  */
 function chromophobic_qr_admin_dialog(
-    string $context
+    $hook_arguments
 ): void {
+    $context = is_array($hook_arguments)
+        ? (string) ($hook_arguments[0] ?? '')
+        : (string) $hook_arguments;
+
     if ($context !== 'index') {
         return;
     }
