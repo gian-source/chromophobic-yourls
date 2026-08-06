@@ -26,6 +26,12 @@ if (is_readable($chromophobic_qr_autoloader)) {
         1
     );
 }
+yourls_add_filter(
+    'table_add_row_action_array',
+    'chromophobic_qr_add_admin_action',
+    10,
+    2
+);
 
 /**
  * Erzeugt für einen bestehenden Kurzlink einen SVG-QR-Code.
@@ -93,4 +99,32 @@ function chromophobic_qr_render($request): void
         echo 'Der QR-Code konnte nicht erzeugt werden.';
         exit;
     }
+}
+/**
+ * Fügt im YOURLS-Adminbereich einen QR-Button hinzu.
+ */
+function chromophobic_qr_add_admin_action(
+    array $actions,
+    string $keyword
+): array {
+    $keyword = yourls_sanitize_keyword($keyword);
+    $qr_url = yourls_link($keyword) . '.qr';
+
+    $safe_id = preg_replace(
+        '/[^A-Za-z0-9_-]/',
+        '-',
+        $keyword
+    );
+
+    $actions['qr'] = [
+        'href'   => yourls_esc_url($qr_url),
+        'id'     => 'qr-button-' . $safe_id,
+        'title'  => 'QR-Code öffnen',
+        'anchor' => 'QR',
+        'onclick' =>
+            "window.open(this.href, '_blank', 'noopener');" .
+            "return false;",
+    ];
+
+    return $actions;
 }
