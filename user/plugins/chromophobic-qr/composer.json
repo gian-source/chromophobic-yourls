@@ -1,0 +1,8 @@
+{
+    "name": "gian-source/chromophobic-qr",
+    "description": "Self-hosted QR code generator for chromophobic YOURLS",
+    "require": {
+        "php": "^8.2",
+        "endroid/qr-code": "6.0.9"
+    }
+}

@@ -52,3 +52,9 @@ Desktop.ini
 .idea
 .vs
 .vscode
+
+# Eigenes QR-Code-Plugin
+!user/plugins/
+!user/plugins/chromophobic-qr/
+!user/plugins/chromophobic-qr/**
+user/plugins/chromophobic-qr/vendor/
