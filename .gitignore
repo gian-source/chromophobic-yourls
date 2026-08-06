@@ -58,3 +58,8 @@ Desktop.ini
 !user/plugins/chromophobic-qr/
 !user/plugins/chromophobic-qr/**
 user/plugins/chromophobic-qr/vendor/
+
+# Eigenes YOURLS-Admin-Theme
+!user/plugins/
+!user/plugins/chromophobic-admin-theme/
+!user/plugins/chromophobic-admin-theme/**
