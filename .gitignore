@@ -63,3 +63,8 @@ user/plugins/chromophobic-qr/vendor/
 !user/plugins/
 !user/plugins/chromophobic-admin-theme/
 !user/plugins/chromophobic-admin-theme/**
+
+# Eigene Benutzerverwaltung
+!user/plugins/
+!user/plugins/chromophobic-users/
+!user/plugins/chromophobic-users/**
