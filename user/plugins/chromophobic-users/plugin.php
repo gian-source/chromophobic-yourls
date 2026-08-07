@@ -4,7 +4,7 @@
 Plugin Name: Chromophobic Users
 Plugin URI: https://github.com/gian-source/chromophobic-yourls
 Description: Datenbankbasierte Benutzerverwaltung für Chromophobic YOURLS.
-Version: 0.1.0
+Version: 0.2.0
 Author: gian-source
 Author URI: https://github.com/gian-source
 */
@@ -113,7 +113,9 @@ function chromophobic_users_add_admin_link(array $links): array
 function chromophobic_users_admin_page(): void
 {
     chromophobic_users_handle_create();
+    chromophobic_users_handle_update();
     chromophobic_users_handle_status();
+    chromophobic_users_handle_delete();
 
     $users = chromophobic_users_get_all();
 
@@ -121,109 +123,110 @@ function chromophobic_users_admin_page(): void
     <div class="cp-users-page">
 
         <div class="cp-users-heading">
-    <div>
-        <h2>Benutzer</h2>
-        <p>
-            Verwalte Personen, die Zugriff auf
-            den Link-Shortener erhalten sollen.
-        </p>
-    </div>
-</div>
-
-<section class="cp-users-card">
-    <div class="cp-users-card-header">
-        <div>
-            <h3>Benutzer hinzufügen</h3>
-            <p>Neuen Zugang für den Shortener erstellen.</p>
-        </div>
-    </div>
-
-    <form method="post" class="cp-users-form">
-        <?php
-        yourls_nonce_field(
-        'chromophobic_users_create',
-    );
-        ?>
-
-        <input
-            type="hidden"
-            name="chromophobic_users_action"
-            value="create"
-        >
-
-        <div class="cp-users-form-grid">
-
-            <label>
-                <span>Benutzername</span>
-                <input
-                    type="text"
-                    name="new_username"
-                    required
-                    minlength="3"
-                    maxlength="64"
-                    autocomplete="off"
-                    placeholder="z. B. max"
-                >
-            </label>
-
-            <label>
-                <span>Anzeigename</span>
-                <input
-                    type="text"
-                    name="display_name"
-                    required
-                    maxlength="120"
-                    placeholder="Max Muster"
-                >
-            </label>
-
-            <label>
-                <span>E-Mail</span>
-                <input
-                    type="email"
-                    name="email"
-                    required
-                    maxlength="190"
-                    autocomplete="email"
-                    placeholder="max@example.com"
-                >
-            </label>
-
-            <label>
-                <span>Rolle</span>
-                <select name="role">
-                    <option value="user">Benutzer</option>
-                    <option value="admin">Administrator</option>
-                </select>
-            </label>
-
-            <label class="cp-users-password">
-                <span>Passwort</span>
-                <input
-                    type="password"
-                    name="new_password"
-                    required
-                    minlength="12"
-                    autocomplete="new-password"
-                >
-                <small>Mindestens 12 Zeichen</small>
-            </label>
-
+            <div>
+                <h2>Benutzer</h2>
+                <p>
+                    Verwalte Personen, die Zugriff auf
+                    den Link-Shortener erhalten sollen.
+                </p>
+            </div>
         </div>
 
-        <div class="cp-users-form-actions">
-            <button
-                type="submit"
-                class="button primary"
-            >
-                Benutzer erstellen
-            </button>
-        </div>
-    </form>
-</section>
-        
+        <?php chromophobic_users_render_notice(); ?>
+
+        <section class="cp-users-card">
+            <div class="cp-users-card-header">
+                <div>
+                    <h3>Benutzer hinzufügen</h3>
+                    <p>Neuen Zugang für den Shortener erstellen.</p>
+                </div>
+            </div>
+
+            <form method="post" class="cp-users-form">
+                <?php
+                yourls_nonce_field(
+                    'chromophobic_users_create'
+                );
+                ?>
+
+                <input
+                    type="hidden"
+                    name="chromophobic_users_action"
+                    value="create"
+                >
+
+                <div class="cp-users-form-grid">
+
+                    <label>
+                        <span>Benutzername</span>
+                        <input
+                            type="text"
+                            name="new_username"
+                            required
+                            minlength="3"
+                            maxlength="64"
+                            autocomplete="off"
+                            placeholder="z. B. max"
+                        >
+                    </label>
+
+                    <label>
+                        <span>Anzeigename</span>
+                        <input
+                            type="text"
+                            name="display_name"
+                            required
+                            maxlength="120"
+                            placeholder="Max Muster"
+                        >
+                    </label>
+
+                    <label>
+                        <span>E-Mail</span>
+                        <input
+                            type="email"
+                            name="email"
+                            required
+                            maxlength="190"
+                            autocomplete="email"
+                            placeholder="max@example.com"
+                        >
+                    </label>
+
+                    <label>
+                        <span>Rolle</span>
+                        <select name="role">
+                            <option value="user">Benutzer</option>
+                            <option value="admin">Administrator</option>
+                        </select>
+                    </label>
+
+                    <label class="cp-users-password">
+                        <span>Passwort</span>
+                        <input
+                            type="password"
+                            name="new_password"
+                            required
+                            minlength="12"
+                            autocomplete="new-password"
+                        >
+                        <small>Mindestens 12 Zeichen</small>
+                    </label>
+
+                </div>
+
+                <div class="cp-users-form-actions">
+                    <button
+                        type="submit"
+                        class="button primary"
+                    >
+                        Benutzer erstellen
+                    </button>
+                </div>
+            </form>
+        </section>
+
         <div class="cp-users-layout">
-
             <section class="cp-users-card cp-users-list">
                 <h3>Vorhandene Benutzer</h3>
 
@@ -241,6 +244,7 @@ function chromophobic_users_admin_page(): void
                             <tr>
                                 <th>Name</th>
                                 <th>Benutzername</th>
+                                <th>E-Mail</th>
                                 <th>Rolle</th>
                                 <th>Status</th>
                                 <th>Aktionen</th>
@@ -268,6 +272,14 @@ function chromophobic_users_admin_page(): void
 
                                 <td>
                                     <?php
+                                    echo yourls_esc_html(
+                                        $user->email
+                                    );
+                                    ?>
+                                </td>
+
+                                <td>
+                                    <?php
                                     echo $user->role === 'admin'
                                         ? 'Administrator'
                                         : 'Benutzer';
@@ -281,37 +293,180 @@ function chromophobic_users_admin_page(): void
                                         : 'Deaktiviert';
                                     ?>
                                 </td>
+
                                 <td>
-                                    <form method="post">
-                                        <?php
-                                        yourls_nonce_field(
-                                            'chromophobic_users_status_' . $user->id
-                                        );
-                                        ?>
+                                    <div class="cp-users-actions">
+                                        <form method="post">
+                                            <?php
+                                            yourls_nonce_field(
+                                                'chromophobic_users_status_' .
+                                                $user->id
+                                            );
+                                            ?>
 
-                                        <input
-                                            type="hidden"
-                                            name="chromophobic_users_action"
-                                            value="toggle_status"
-                                        >
+                                            <input
+                                                type="hidden"
+                                                name="chromophobic_users_action"
+                                                value="toggle_status"
+                                            >
 
-                                        <input
-                                            type="hidden"
-                                            name="user_id"
-                                            value="<?php echo (int) $user->id; ?>"
-                                        >
+                                            <input
+                                                type="hidden"
+                                                name="user_id"
+                                                value="<?php echo (int) $user->id; ?>"
+                                            >
 
-                                        <button
-                                            type="submit"
-                                            class="button"
+                                            <button
+                                                type="submit"
+                                                class="button"
+                                            >
+                                                <?php
+                                                echo $user->status === 'active'
+                                                    ? 'Deaktivieren'
+                                                    : 'Aktivieren';
+                                                ?>
+                                            </button>
+                                        </form>
+
+                                        <details class="cp-users-edit">
+                                            <summary class="button">
+                                                Bearbeiten
+                                            </summary>
+
+                                            <form
+                                                method="post"
+                                                class="cp-users-form"
+                                            >
+                                                <?php
+                                                yourls_nonce_field(
+                                                    'chromophobic_users_update_' .
+                                                    $user->id
+                                                );
+                                                ?>
+
+                                                <input
+                                                    type="hidden"
+                                                    name="chromophobic_users_action"
+                                                    value="update"
+                                                >
+
+                                                <input
+                                                    type="hidden"
+                                                    name="user_id"
+                                                    value="<?php echo (int) $user->id; ?>"
+                                                >
+
+                                                <div class="cp-users-form-grid">
+                                                    <label>
+                                                        <span>Benutzername</span>
+                                                        <input
+                                                            type="text"
+                                                            name="edit_username"
+                                                            required
+                                                            minlength="3"
+                                                            maxlength="64"
+                                                            autocomplete="off"
+                                                            value="<?php echo chromophobic_users_esc_attr((string) $user->username); ?>"
+                                                        >
+                                                    </label>
+
+                                                    <label>
+                                                        <span>Anzeigename</span>
+                                                        <input
+                                                            type="text"
+                                                            name="display_name"
+                                                            required
+                                                            maxlength="120"
+                                                            value="<?php echo chromophobic_users_esc_attr((string) $user->display_name); ?>"
+                                                        >
+                                                    </label>
+
+                                                    <label>
+                                                        <span>E-Mail</span>
+                                                        <input
+                                                            type="email"
+                                                            name="email"
+                                                            required
+                                                            maxlength="190"
+                                                            value="<?php echo chromophobic_users_esc_attr((string) $user->email); ?>"
+                                                        >
+                                                    </label>
+
+                                                    <label>
+                                                        <span>Rolle</span>
+                                                        <select name="role">
+                                                            <option
+                                                                value="user"
+                                                                <?php echo $user->role === 'user' ? 'selected' : ''; ?>
+                                                            >
+                                                                Benutzer
+                                                            </option>
+                                                            <option
+                                                                value="admin"
+                                                                <?php echo $user->role === 'admin' ? 'selected' : ''; ?>
+                                                            >
+                                                                Administrator
+                                                            </option>
+                                                        </select>
+                                                    </label>
+
+                                                    <label class="cp-users-password">
+                                                        <span>Neues Passwort</span>
+                                                        <input
+                                                            type="password"
+                                                            name="edit_password"
+                                                            minlength="12"
+                                                            autocomplete="new-password"
+                                                        >
+                                                        <small>
+                                                            Leer lassen, um das
+                                                            aktuelle Passwort zu behalten.
+                                                        </small>
+                                                    </label>
+                                                </div>
+
+                                                <div class="cp-users-form-actions">
+                                                    <button
+                                                        type="submit"
+                                                        class="button primary"
+                                                    >
+                                                        Änderungen speichern
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </details>
+
+                                        <form
+                                            method="post"
+                                            onsubmit="return confirm('Diesen Benutzer wirklich löschen?');"
                                         >
                                             <?php
-                                            echo $user->status === 'active'
-                                                ? 'Deaktivieren'
-                                                : 'Aktivieren';
+                                            yourls_nonce_field(
+                                                'chromophobic_users_delete_' .
+                                                $user->id
+                                            );
                                             ?>
-                                        </button>
-                                    </form>
+
+                                            <input
+                                                type="hidden"
+                                                name="chromophobic_users_action"
+                                                value="delete"
+                                            >
+
+                                            <input
+                                                type="hidden"
+                                                name="user_id"
+                                                value="<?php echo (int) $user->id; ?>"
+                                            >
+
+                                            <button
+                                                type="submit"
+                                                class="button"
+                                            >
+                                                Löschen
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -320,7 +475,6 @@ function chromophobic_users_admin_page(): void
 
                 <?php endif; ?>
             </section>
-
         </div>
     </div>
     <?php
@@ -339,7 +493,7 @@ function chromophobic_users_handle_create(): void
     }
 
     yourls_verify_nonce(
-    'chromophobic_users_create'
+        'chromophobic_users_create'
     );
 
     $username = trim(
@@ -350,9 +504,9 @@ function chromophobic_users_handle_create(): void
         (string) ($_POST['display_name'] ?? '')
     );
 
-    $email = trim(
+    $email = strtolower(trim(
         (string) ($_POST['email'] ?? '')
-    );
+    ));
 
     $password = (string) ($_POST['new_password'] ?? '');
 
@@ -366,28 +520,23 @@ function chromophobic_users_handle_create(): void
         || !filter_var($email, FILTER_VALIDATE_EMAIL)
         || strlen($password) < 12
     ) {
-        echo '<div class="error">';
-        echo 'Bitte alle Felder korrekt ausfüllen.';
-        echo '</div>';
-        return;
+        chromophobic_users_redirect(
+            'Bitte alle Felder korrekt ausfüllen.',
+            'error'
+        );
     }
 
-    if (
-        !preg_match(
-            '/^[a-zA-Z0-9._-]{3,64}$/',
-            $username
-        )
-    ) {
-        echo '<div class="error">';
-        echo 'Der Benutzername enthält ungültige Zeichen.';
-        echo '</div>';
-        return;
+    if (!chromophobic_users_valid_username($username)) {
+        chromophobic_users_redirect(
+            'Der Benutzername enthält ungültige Zeichen.',
+            'error'
+        );
     }
 
     $table = CHROMOPHOBIC_USERS_TABLE;
 
     $existing = yourls_get_db(
-        'chromophobic-users-check'
+        'chromophobic-users-create-check'
     )->fetchValue(
         "
         SELECT COUNT(*)
@@ -402,15 +551,15 @@ function chromophobic_users_handle_create(): void
     );
 
     if ((int) $existing > 0) {
-        echo '<div class="error">';
-        echo 'Benutzername oder E-Mail existiert bereits.';
-        echo '</div>';
-        return;
+        chromophobic_users_redirect(
+            'Benutzername oder E-Mail existiert bereits.',
+            'error'
+        );
     }
 
     $now = date('Y-m-d H:i:s');
 
-    $created = yourls_get_db(
+    yourls_get_db(
         'chromophobic-users-create'
     )->fetchAffected(
         "
@@ -441,22 +590,326 @@ function chromophobic_users_handle_create(): void
             'username' => $username,
             'display_name' => $display_name,
             'email' => $email,
-            'password_hash' =>
-                password_hash(
-                    $password,
-                    PASSWORD_DEFAULT
-                ),
+            'password_hash' => password_hash(
+                $password,
+                PASSWORD_DEFAULT
+            ),
             'role' => $role,
             'created_at' => $now,
             'updated_at' => $now,
         ]
     );
 
-    if ($created) {
-        echo '<div class="success">';
-        echo 'Benutzer wurde erstellt.';
-        echo '</div>';
+    chromophobic_users_redirect(
+        'Benutzer wurde erstellt.'
+    );
+}
+
+/**
+ * Benutzer bearbeiten und optional Passwort ändern.
+ */
+function chromophobic_users_handle_update(): void
+{
+    if (
+        ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
+        || ($_POST['chromophobic_users_action'] ?? '') !== 'update'
+    ) {
+        return;
     }
+
+    $user_id = (int) ($_POST['user_id'] ?? 0);
+
+    if ($user_id <= 0) {
+        chromophobic_users_redirect(
+            'Ungültiger Benutzer.',
+            'error'
+        );
+    }
+
+    yourls_verify_nonce(
+        'chromophobic_users_update_' . $user_id
+    );
+
+    $user = chromophobic_users_get_by_id($user_id);
+
+    if (!$user) {
+        chromophobic_users_redirect(
+            'Benutzer wurde nicht gefunden.',
+            'error'
+        );
+    }
+
+    $username = trim(
+        (string) ($_POST['edit_username'] ?? '')
+    );
+
+    $display_name = trim(
+        (string) ($_POST['display_name'] ?? '')
+    );
+
+    $email = strtolower(trim(
+        (string) ($_POST['email'] ?? '')
+    ));
+
+    $password = (string) ($_POST['edit_password'] ?? '');
+
+    $role = ($_POST['role'] ?? '') === 'admin'
+        ? 'admin'
+        : 'user';
+
+    if (
+        $username === ''
+        || $display_name === ''
+        || !filter_var($email, FILTER_VALIDATE_EMAIL)
+    ) {
+        chromophobic_users_redirect(
+            'Bitte alle Felder korrekt ausfüllen.',
+            'error'
+        );
+    }
+
+    if (!chromophobic_users_valid_username($username)) {
+        chromophobic_users_redirect(
+            'Der Benutzername enthält ungültige Zeichen.',
+            'error'
+        );
+    }
+
+    if ($password !== '' && strlen($password) < 12) {
+        chromophobic_users_redirect(
+            'Das neue Passwort muss mindestens 12 Zeichen lang sein.',
+            'error'
+        );
+    }
+
+    if (
+        $user->role === 'admin'
+        && $user->status === 'active'
+        && $role !== 'admin'
+        && chromophobic_users_active_admin_count() <= 1
+    ) {
+        chromophobic_users_redirect(
+            'Der letzte aktive Administrator kann nicht zum Benutzer herabgestuft werden.',
+            'error'
+        );
+    }
+
+    $table = CHROMOPHOBIC_USERS_TABLE;
+
+    $existing = yourls_get_db(
+        'chromophobic-users-update-check'
+    )->fetchValue(
+        "
+        SELECT COUNT(*)
+        FROM `$table`
+        WHERE (`username` = :username OR `email` = :email)
+          AND `id` <> :id
+        ",
+        [
+            'username' => $username,
+            'email' => $email,
+            'id' => $user_id,
+        ]
+    );
+
+    if ((int) $existing > 0) {
+        chromophobic_users_redirect(
+            'Benutzername oder E-Mail existiert bereits.',
+            'error'
+        );
+    }
+
+    $params = [
+        'username' => $username,
+        'display_name' => $display_name,
+        'email' => $email,
+        'role' => $role,
+        'updated_at' => date('Y-m-d H:i:s'),
+        'id' => $user_id,
+    ];
+
+    if ($password !== '') {
+        $params['password_hash'] = password_hash(
+            $password,
+            PASSWORD_DEFAULT
+        );
+
+        $sql = "
+            UPDATE `$table`
+            SET
+                `username` = :username,
+                `display_name` = :display_name,
+                `email` = :email,
+                `role` = :role,
+                `password_hash` = :password_hash,
+                `updated_at` = :updated_at
+            WHERE `id` = :id
+        ";
+    } else {
+        $sql = "
+            UPDATE `$table`
+            SET
+                `username` = :username,
+                `display_name` = :display_name,
+                `email` = :email,
+                `role` = :role,
+                `updated_at` = :updated_at
+            WHERE `id` = :id
+        ";
+    }
+
+    yourls_get_db(
+        'chromophobic-users-update'
+    )->fetchAffected(
+        $sql,
+        $params
+    );
+
+    chromophobic_users_redirect(
+        $password === ''
+            ? 'Benutzer wurde aktualisiert.'
+            : 'Benutzer und Passwort wurden aktualisiert.'
+    );
+}
+
+/**
+ * Benutzer aktivieren oder deaktivieren.
+ */
+function chromophobic_users_handle_status(): void
+{
+    if (
+        ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
+        || ($_POST['chromophobic_users_action'] ?? '')
+            !== 'toggle_status'
+    ) {
+        return;
+    }
+
+    $user_id = (int) ($_POST['user_id'] ?? 0);
+
+    if ($user_id <= 0) {
+        chromophobic_users_redirect(
+            'Ungültiger Benutzer.',
+            'error'
+        );
+    }
+
+    yourls_verify_nonce(
+        'chromophobic_users_status_' . $user_id
+    );
+
+    $user = chromophobic_users_get_by_id($user_id);
+
+    if (!$user) {
+        chromophobic_users_redirect(
+            'Benutzer wurde nicht gefunden.',
+            'error'
+        );
+    }
+
+    if (
+        $user->role === 'admin'
+        && $user->status === 'active'
+        && chromophobic_users_active_admin_count() <= 1
+    ) {
+        chromophobic_users_redirect(
+            'Der letzte aktive Administrator kann nicht deaktiviert werden.',
+            'error'
+        );
+    }
+
+    $new_status = $user->status === 'active'
+        ? 'disabled'
+        : 'active';
+
+    $table = CHROMOPHOBIC_USERS_TABLE;
+
+    yourls_get_db(
+        'chromophobic-users-status-update'
+    )->fetchAffected(
+        "
+        UPDATE `$table`
+        SET
+            `status` = :status,
+            `updated_at` = :updated_at
+        WHERE `id` = :id
+        ",
+        [
+            'status' => $new_status,
+            'updated_at' => date('Y-m-d H:i:s'),
+            'id' => $user_id,
+        ]
+    );
+
+    chromophobic_users_redirect(
+        $new_status === 'active'
+            ? 'Benutzer wurde aktiviert.'
+            : 'Benutzer wurde deaktiviert.'
+    );
+}
+
+/**
+ * Benutzer löschen.
+ */
+function chromophobic_users_handle_delete(): void
+{
+    if (
+        ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
+        || ($_POST['chromophobic_users_action'] ?? '') !== 'delete'
+    ) {
+        return;
+    }
+
+    $user_id = (int) ($_POST['user_id'] ?? 0);
+
+    if ($user_id <= 0) {
+        chromophobic_users_redirect(
+            'Ungültiger Benutzer.',
+            'error'
+        );
+    }
+
+    yourls_verify_nonce(
+        'chromophobic_users_delete_' . $user_id
+    );
+
+    $user = chromophobic_users_get_by_id($user_id);
+
+    if (!$user) {
+        chromophobic_users_redirect(
+            'Benutzer wurde nicht gefunden.',
+            'error'
+        );
+    }
+
+    if (
+        $user->role === 'admin'
+        && $user->status === 'active'
+        && chromophobic_users_active_admin_count() <= 1
+    ) {
+        chromophobic_users_redirect(
+            'Der letzte aktive Administrator kann nicht gelöscht werden.',
+            'error'
+        );
+    }
+
+    $table = CHROMOPHOBIC_USERS_TABLE;
+
+    yourls_get_db(
+        'chromophobic-users-delete'
+    )->fetchAffected(
+        "
+        DELETE FROM `$table`
+        WHERE `id` = :id
+        ",
+        [
+            'id' => $user_id,
+        ]
+    );
+
+    chromophobic_users_redirect(
+        'Benutzer wurde gelöscht.'
+    );
 }
 
 /**
@@ -484,36 +937,28 @@ function chromophobic_users_get_all(): array
         "
     );
 }
+
 /**
- * Benutzer aktivieren oder deaktivieren.
+ * Einzelnen Benutzer laden.
  */
-function chromophobic_users_handle_status(): void
+function chromophobic_users_get_by_id(int $user_id): ?object
 {
-    if (
-        ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
-        || ($_POST['chromophobic_users_action'] ?? '')
-            !== 'toggle_status'
-    ) {
-        return;
-    }
-
-    $user_id = (int) ($_POST['user_id'] ?? 0);
-
-    if ($user_id <= 0) {
-        return;
-    }
-
-    yourls_verify_nonce(
-        'chromophobic_users_status_' . $user_id
-    );
-
     $table = CHROMOPHOBIC_USERS_TABLE;
 
     $user = yourls_get_db(
-        'chromophobic-users-status-get'
+        'chromophobic-users-get'
     )->fetchObject(
         "
-        SELECT `id`, `status`
+        SELECT
+            `id`,
+            `username`,
+            `display_name`,
+            `email`,
+            `role`,
+            `status`,
+            `created_at`,
+            `updated_at`,
+            `last_login_at`
         FROM `$table`
         WHERE `id` = :id
         LIMIT 1
@@ -523,45 +968,91 @@ function chromophobic_users_handle_status(): void
         ]
     );
 
-    if (!$user) {
-        chromophobic_users_notice(
-            'Benutzer wurde nicht gefunden.',
-            'error'
-        );
+    return $user ?: null;
+}
+
+/**
+ * Anzahl aktiver Administratoren ermitteln.
+ */
+function chromophobic_users_active_admin_count(): int
+{
+    $table = CHROMOPHOBIC_USERS_TABLE;
+
+    return (int) yourls_get_db(
+        'chromophobic-users-admin-count'
+    )->fetchValue(
+        "
+        SELECT COUNT(*)
+        FROM `$table`
+        WHERE `role` = 'admin'
+          AND `status` = 'active'
+        "
+    );
+}
+
+/**
+ * Benutzername validieren.
+ */
+function chromophobic_users_valid_username(string $username): bool
+{
+    return (bool) preg_match(
+        '/^[a-zA-Z0-9._-]{3,64}$/',
+        $username
+    );
+}
+
+/**
+ * Nach POST auf die Benutzerseite zurückleiten.
+ */
+function chromophobic_users_redirect(
+    string $message,
+    string $type = 'success'
+): void {
+    $type = $type === 'error'
+        ? 'error'
+        : 'success';
+
+    $url = yourls_admin_url(
+        'plugins.php?page=chromophobic-users'
+    );
+
+    $url .= '&chromophobic_notice=' . rawurlencode($message);
+    $url .= '&chromophobic_notice_type=' . rawurlencode($type);
+
+    yourls_redirect($url, 303);
+    exit;
+}
+
+/**
+ * Rückmeldung nach einem Redirect ausgeben.
+ */
+function chromophobic_users_render_notice(): void
+{
+    $message = trim(
+        (string) ($_GET['chromophobic_notice'] ?? '')
+    );
+
+    if ($message === '') {
         return;
     }
 
-    $new_status = $user->status === 'active'
-        ? 'disabled'
-        : 'active';
+    $type = ($_GET['chromophobic_notice_type'] ?? '') === 'error'
+        ? 'error'
+        : 'success';
 
-    $updated = yourls_get_db(
-        'chromophobic-users-status-update'
-    )->fetchAffected(
-        "
-        UPDATE `$table`
-        SET
-            `status` = :status,
-            `updated_at` = :updated_at
-        WHERE `id` = :id
-        ",
-        [
-            'status' => $new_status,
-            'updated_at' => date('Y-m-d H:i:s'),
-            'id' => $user_id,
-        ]
+    echo '<div class="' . $type . '">';
+    echo yourls_esc_html($message);
+    echo '</div>';
+}
+
+/**
+ * Wert sicher in einem HTML-Attribut ausgeben.
+ */
+function chromophobic_users_esc_attr(string $value): string
+{
+    return htmlspecialchars(
+        $value,
+        ENT_QUOTES | ENT_SUBSTITUTE,
+        'UTF-8'
     );
-
-    if ((int) $updated > 0) {
-        $redirect_url = yourls_admin_url(
-            'plugins.php?page=chromophobic-users'
-        );
-
-        yourls_redirect(
-            $redirect_url,
-            303
-        );
-
-        exit;
-    }
 }
