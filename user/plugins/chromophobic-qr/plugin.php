@@ -4,7 +4,7 @@
 Plugin Name: Chromophobic QR Codes
 Plugin URI: https://github.com/gian-source/chromophobic-yourls
 Description: Selbst gehostete QR-Codes mit Downloadfunktion für YOURLS.
-Version: 1.2.0
+Version: 1.3.0
 Author: gian-source
 Author URI: https://github.com/gian-source
 */
@@ -97,6 +97,36 @@ function chromophobic_qr_render($request): void
     }
 
     $short_url = yourls_link($keyword);
+    $long_url = yourls_get_keyword_longurl($keyword);
+
+    $target = ($_GET['target'] ?? 'short') === 'long'
+        ? 'long'
+        : 'short';
+
+    $qr_target_url = $target === 'long'
+        ? (string) $long_url
+        : $short_url;
+
+    if ($qr_target_url === '') {
+        throw new RuntimeException(
+            'Die Ziel-URL konnte nicht geladen werden.'
+        );
+    }
+
+    $size_presets = [
+        256 => 25.0,
+        512 => 50.0,
+        1024 => 100.0,
+        2048 => 200.0,
+    ];
+
+    $requested_size = (int) ($_GET['size'] ?? 1024);
+    $size = array_key_exists($requested_size, $size_presets)
+        ? $requested_size
+        : 1024;
+
+    $vector_artboard_mm = $size_presets[$size];
+    $margin = max(10, (int) round($size * 0.04));
 
     $safe_filename = preg_replace(
         '/[^A-Za-z0-9_-]/',
@@ -109,18 +139,22 @@ function chromophobic_qr_render($request): void
 
     try {
         $qr_code = new QrCode(
-            data: $short_url,
+            data: $qr_target_url,
             encoding: new Encoding('UTF-8'),
             errorCorrectionLevel: ErrorCorrectionLevel::Medium,
-            size: 800,
-            margin: 30,
+            size: $size,
+            margin: $margin,
             roundBlockSizeMode: RoundBlockSizeMode::Margin,
             foregroundColor: new Color(0, 0, 0),
             backgroundColor: new Color(255, 255, 255, 127)
         );
 
         [$contents, $mime_type, $extension] =
-            chromophobic_qr_generate_file($qr_code, $format);
+            chromophobic_qr_generate_file(
+                $qr_code,
+                $format,
+                $vector_artboard_mm
+            );
 
         $disposition = $download ? 'attachment' : 'inline';
 
@@ -132,6 +166,10 @@ function chromophobic_qr_render($request): void
             $disposition .
             '; filename="' .
             $safe_filename .
+            '-' .
+            $target .
+            '-' .
+            $size .
             '.' .
             $extension .
             '"'
@@ -160,7 +198,8 @@ function chromophobic_qr_render($request): void
  */
 function chromophobic_qr_generate_file(
     QrCode $qr_code,
-    string $format
+    string $format,
+    float $vector_artboard_mm
 ): array {
     switch ($format) {
         case 'svg':
@@ -174,7 +213,10 @@ function chromophobic_qr_generate_file(
 
         case 'eps':
             return [
-                chromophobic_qr_generate_vector_eps($qr_code),
+                chromophobic_qr_generate_vector_eps(
+                    $qr_code,
+                    $vector_artboard_mm
+                ),
                 'application/postscript',
                 'eps',
             ];
@@ -288,7 +330,8 @@ function chromophobic_qr_generate_file(
  * Es wird bewusst kein Hintergrund-Rechteck gezeichnet.
  */
 function chromophobic_qr_generate_vector_eps(
-    QrCode $qr_code
+    QrCode $qr_code,
+    float $artboard_mm
 ): string {
     $matrix = (new MatrixFactory())->create($qr_code);
 
@@ -298,21 +341,38 @@ function chromophobic_qr_generate_vector_eps(
     $green = $foreground->getGreen() / 255;
     $blue = $foreground->getBlue() / 255;
 
-    $outer_size = $matrix->getOuterSize();
-    $block_size = $matrix->getBlockSize();
+    $outer_size = (float) $matrix->getOuterSize();
+    $block_size = (float) $matrix->getBlockSize();
     $block_count = $matrix->getBlockCount();
-    $margin = $matrix->getMarginLeft();
+    $margin = (float) $matrix->getMarginLeft();
+
+    // EPS arbeitet in PostScript-Punkten. Illustrator erhält dadurch
+    // eine klar definierte quadratische Zeichenfläche in Millimetern.
+    $artboard_points = $artboard_mm * 72 / 25.4;
+    $scale = $artboard_points / $outer_size;
+
+    $bounding_box = (int) ceil($artboard_points);
+    $hires_box = sprintf('%.4F', $artboard_points);
 
     $lines = [
         '%!PS-Adobe-3.0 EPSF-3.0',
         '%%Creator: Chromophobic QR Codes',
         '%%BoundingBox: 0 0 ' .
-            (int) ceil($outer_size) .
+            $bounding_box .
             ' ' .
-            (int) ceil($outer_size),
+            $bounding_box,
+        '%%HiResBoundingBox: 0 0 ' .
+            $hires_box .
+            ' ' .
+            $hires_box,
+        '%%PageBoundingBox: 0 0 ' .
+            $bounding_box .
+            ' ' .
+            $bounding_box,
         '%%LanguageLevel: 2',
         '%%Pages: 1',
         '%%EndComments',
+        '%%Page: 1 1',
         '/F { rectfill } bind def',
         sprintf(
             '%.6F %.6F %.6F setrgbcolor',
@@ -333,19 +393,21 @@ function chromophobic_qr_generate_vector_eps(
                 continue;
             }
 
-            $x = $margin + ($block_size * $column);
-            $y = $margin + ($block_size * $row);
+            $x = ($margin + ($block_size * $column)) * $scale;
+            $y = ($margin + ($block_size * $row)) * $scale;
+            $scaled_block_size = $block_size * $scale;
 
             $lines[] = sprintf(
                 '%.10F %.10F %.10F %.10F F',
                 $x,
                 $y,
-                $block_size,
-                $block_size
+                $scaled_block_size,
+                $scaled_block_size
             );
         }
     }
 
+    $lines[] = 'showpage';
     $lines[] = '%%EOF';
 
     return implode("\n", $lines) . "\n";
@@ -444,6 +506,39 @@ function chromophobic_qr_admin_styles(
             background: #fff;
         }
 
+        .chromophobic-qr-options {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin: 0 0 18px;
+            text-align: left;
+        }
+
+        .chromophobic-qr-options label {
+            display: grid;
+            gap: 6px;
+            margin: 0;
+        }
+
+        .chromophobic-qr-options span {
+            font-size: 12px;
+            font-weight: 700;
+            color: #5f6368;
+        }
+
+        .chromophobic-qr-options select {
+            width: 100%;
+            min-height: 40px;
+            box-sizing: border-box;
+        }
+
+        .chromophobic-qr-hint {
+            margin: -8px 0 18px;
+            font-size: 12px;
+            line-height: 1.45;
+            color: #6b7280;
+        }
+
         .chromophobic-qr-downloads {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -465,6 +560,12 @@ function chromophobic_qr_admin_styles(
             color: #fff;
             background: #2a85b3;
             text-decoration: none;
+        }
+
+        @media (max-width: 520px) {
+            .chromophobic-qr-options {
+                grid-template-columns: 1fr;
+            }
         }
 
         .chromophobic-qr-close {
@@ -499,6 +600,35 @@ function chromophobic_qr_admin_dialog(
             alt="Vorschau des QR-Codes"
         >
 
+        <div class="chromophobic-qr-options">
+            <label>
+                <span>QR-Ziel</span>
+                <select id="chromophobic-qr-target">
+                    <option value="short" selected>
+                        Kurzlink (empfohlen)
+                    </option>
+                    <option value="long">
+                        Original-URL
+                    </option>
+                </select>
+            </label>
+
+            <label>
+                <span>Grösse</span>
+                <select id="chromophobic-qr-size">
+                    <option value="256">256 px / 25 mm</option>
+                    <option value="512">512 px / 50 mm</option>
+                    <option value="1024" selected>1024 px / 100 mm</option>
+                    <option value="2048">2048 px / 200 mm</option>
+                </select>
+            </label>
+        </div>
+
+        <p class="chromophobic-qr-hint">
+            Kurzlink: kompakter QR-Code, YOURLS-Statistik und Ziel später änderbar.
+            SVG und EPS bleiben frei skalierbar.
+        </p>
+
         <div class="chromophobic-qr-downloads">
             <a id="chromophobic-qr-svg" href="" download>
                 SVG herunterladen
@@ -528,49 +658,107 @@ function chromophobic_qr_admin_dialog(
     </dialog>
 
     <script>
+        let chromophobicQrBaseUrl = '';
+        let chromophobicQrKeyword = '';
+
+        function chromophobicQrBuildUrl(format, download) {
+            const target = document.getElementById(
+                'chromophobic-qr-target'
+            ).value;
+
+            const size = document.getElementById(
+                'chromophobic-qr-size'
+            ).value;
+
+            const url = new URL(
+                chromophobicQrBaseUrl + '.' + format
+            );
+
+            url.searchParams.set('target', target);
+            url.searchParams.set('size', size);
+
+            if (download) {
+                url.searchParams.set('download', '1');
+            }
+
+            return url;
+        }
+
+        function chromophobicQrUpdate() {
+            if (!chromophobicQrBaseUrl) {
+                return;
+            }
+
+            const target = document.getElementById(
+                'chromophobic-qr-target'
+            ).value;
+
+            const size = document.getElementById(
+                'chromophobic-qr-size'
+            ).value;
+
+            document.getElementById(
+                'chromophobic-qr-preview'
+            ).src = chromophobicQrBuildUrl('svg', false).toString();
+
+            ['svg', 'png', 'jpg', 'eps'].forEach(function (format) {
+                const link = document.getElementById(
+                    'chromophobic-qr-' + format
+                );
+
+                link.href = chromophobicQrBuildUrl(
+                    format,
+                    true
+                ).toString();
+
+                link.download =
+                    chromophobicQrKeyword +
+                    '-' +
+                    target +
+                    '-' +
+                    size +
+                    '.' +
+                    format;
+            });
+        }
+
         function chromophobicQrOpen(qrUrl) {
             const dialog = document.getElementById(
                 'chromophobic-qr-dialog'
             );
 
-            const baseUrl = qrUrl.replace(
+            chromophobicQrBaseUrl = qrUrl.replace(
                 /\.qr(?:\.(?:svg|png|jpe?g|eps))?(?:\?.*)?$/i,
                 '.qr'
             );
 
-            const url = new URL(baseUrl);
+            const url = new URL(chromophobicQrBaseUrl);
             const filePart = url.pathname
                 .split('/')
                 .filter(Boolean)
                 .pop() || 'qr-code.qr';
 
-            const keyword = filePart.replace(/\.qr$/i, '');
-
-            const formats = ['svg', 'png', 'jpg', 'eps'];
+            chromophobicQrKeyword = filePart.replace(/\.qr$/i, '');
 
             document.getElementById(
-                'chromophobic-qr-preview'
-            ).src = baseUrl + '.svg';
+                'chromophobic-qr-target'
+            ).value = 'short';
 
-            formats.forEach(function (format) {
-                const link = document.getElementById(
-                    'chromophobic-qr-' + format
-                );
+            document.getElementById(
+                'chromophobic-qr-size'
+            ).value = '1024';
 
-                link.href =
-                    baseUrl +
-                    '.' +
-                    format +
-                    '?download=1';
-
-                link.download =
-                    keyword +
-                    '.' +
-                    format;
-            });
-
+            chromophobicQrUpdate();
             dialog.showModal();
         }
+
+        document.getElementById(
+            'chromophobic-qr-target'
+        ).addEventListener('change', chromophobicQrUpdate);
+
+        document.getElementById(
+            'chromophobic-qr-size'
+        ).addEventListener('change', chromophobicQrUpdate);
     </script>
     <?php
 }
