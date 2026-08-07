@@ -4,16 +4,17 @@
 Plugin Name: Chromophobic QR Codes
 Plugin URI: https://github.com/gian-source/chromophobic-yourls
 Description: Selbst gehostete QR-Codes mit Downloadfunktion für YOURLS.
-Version: 1.1.0
+Version: 1.2.0
 Author: gian-source
 Author URI: https://github.com/gian-source
 */
 
+use Endroid\QrCode\Bacon\MatrixFactory;
+use Endroid\QrCode\Color\Color;
 use Endroid\QrCode\Encoding\Encoding;
 use Endroid\QrCode\ErrorCorrectionLevel;
 use Endroid\QrCode\QrCode;
 use Endroid\QrCode\RoundBlockSizeMode;
-use Endroid\QrCode\Writer\EpsWriter;
 use Endroid\QrCode\Writer\PngWriter;
 use Endroid\QrCode\Writer\SvgWriter;
 
@@ -113,7 +114,9 @@ function chromophobic_qr_render($request): void
             errorCorrectionLevel: ErrorCorrectionLevel::Medium,
             size: 800,
             margin: 30,
-            roundBlockSizeMode: RoundBlockSizeMode::Margin
+            roundBlockSizeMode: RoundBlockSizeMode::Margin,
+            foregroundColor: new Color(0, 0, 0),
+            backgroundColor: new Color(255, 255, 255, 127)
         );
 
         [$contents, $mime_type, $extension] =
@@ -170,11 +173,9 @@ function chromophobic_qr_generate_file(
             ];
 
         case 'eps':
-            $result = (new EpsWriter())->write($qr_code);
-
             return [
-                $result->getString(),
-                $result->getMimeType(),
+                chromophobic_qr_generate_vector_eps($qr_code),
+                'application/postscript',
                 'eps',
             ];
 
@@ -193,27 +194,74 @@ function chromophobic_qr_generate_file(
             chromophobic_qr_require_gd();
 
             $png_result = (new PngWriter())->write($qr_code);
-            $image = imagecreatefromstring(
+            $source_image = imagecreatefromstring(
                 $png_result->getString()
             );
 
-            if (!$image instanceof GdImage) {
+            if (!$source_image instanceof GdImage) {
                 throw new RuntimeException(
                     'PNG konnte nicht in JPG umgewandelt werden.'
                 );
             }
 
+            $width = imagesx($source_image);
+            $height = imagesy($source_image);
+
+            $jpg_image = imagecreatetruecolor(
+                $width,
+                $height
+            );
+
+            if (!$jpg_image instanceof GdImage) {
+                imagedestroy($source_image);
+
+                throw new RuntimeException(
+                    'JPG-Arbeitsfläche konnte nicht erzeugt werden.'
+                );
+            }
+
+            $white = imagecolorallocate(
+                $jpg_image,
+                255,
+                255,
+                255
+            );
+
+            imagefill(
+                $jpg_image,
+                0,
+                0,
+                $white
+            );
+
+            imagealphablending(
+                $jpg_image,
+                true
+            );
+
+            imagecopy(
+                $jpg_image,
+                $source_image,
+                0,
+                0,
+                0,
+                0,
+                $width,
+                $height
+            );
+
             ob_start();
 
             $success = imagejpeg(
-                $image,
+                $jpg_image,
                 null,
                 92
             );
 
             $jpg_contents = ob_get_clean();
 
-            imagedestroy($image);
+            imagedestroy($source_image);
+            imagedestroy($jpg_image);
 
             if (!$success || !is_string($jpg_contents)) {
                 throw new RuntimeException(
@@ -232,6 +280,75 @@ function chromophobic_qr_generate_file(
                 'Nicht unterstütztes QR-Code-Format.'
             );
     }
+}
+
+/**
+ * Erzeugt ein echtes Vektor-EPS direkt aus der QR-Matrix.
+ *
+ * Es wird bewusst kein Hintergrund-Rechteck gezeichnet.
+ */
+function chromophobic_qr_generate_vector_eps(
+    QrCode $qr_code
+): string {
+    $matrix = (new MatrixFactory())->create($qr_code);
+
+    $foreground = $qr_code->getForegroundColor();
+
+    $red = $foreground->getRed() / 255;
+    $green = $foreground->getGreen() / 255;
+    $blue = $foreground->getBlue() / 255;
+
+    $outer_size = $matrix->getOuterSize();
+    $block_size = $matrix->getBlockSize();
+    $block_count = $matrix->getBlockCount();
+    $margin = $matrix->getMarginLeft();
+
+    $lines = [
+        '%!PS-Adobe-3.0 EPSF-3.0',
+        '%%Creator: Chromophobic QR Codes',
+        '%%BoundingBox: 0 0 ' .
+            (int) ceil($outer_size) .
+            ' ' .
+            (int) ceil($outer_size),
+        '%%LanguageLevel: 2',
+        '%%Pages: 1',
+        '%%EndComments',
+        '/F { rectfill } bind def',
+        sprintf(
+            '%.6F %.6F %.6F setrgbcolor',
+            $red,
+            $green,
+            $blue
+        ),
+    ];
+
+    for ($row = 0; $row < $block_count; ++$row) {
+        for ($column = 0; $column < $block_count; ++$column) {
+            if (
+                1 !== $matrix->getBlockValue(
+                    $block_count - 1 - $row,
+                    $column
+                )
+            ) {
+                continue;
+            }
+
+            $x = $margin + ($block_size * $column);
+            $y = $margin + ($block_size * $row);
+
+            $lines[] = sprintf(
+                '%.10F %.10F %.10F %.10F F',
+                $x,
+                $y,
+                $block_size,
+                $block_size
+            );
+        }
+    }
+
+    $lines[] = '%%EOF';
+
+    return implode("\n", $lines) . "\n";
 }
 
 /**
