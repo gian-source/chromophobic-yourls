@@ -40,73 +40,148 @@
             totalClicks: null
         };
 
-        const walker = document.createTreeWalker(
-            document.body,
-            NodeFilter.SHOW_TEXT
-        );
+        const displayPattern =
+            /Display\s+\d+\s+to\s+\d+\s+of\s+(\d+)\s+URLs?\.?/i;
 
-        const nodes = [];
+        const overallPattern =
+            /Overall,\s*tracking\s+(\d+)\s+links?,\s*(\d+)\s+clicks?,\s*and\s+counting!?/i;
 
-        while (walker.nextNode()) {
-            nodes.push(walker.currentNode);
-        }
+        const helloPattern =
+            /^(?:Hello|Hallo)\s+([^(]+?)(?:\s*\(|$)/i;
 
-        nodes.forEach((node) => {
-            const text = normaliseText(node.nodeValue);
-
-            if (!text) {
+        /*
+         * YOURLS kann die Tracking-Texte über mehrere Text-/Strong-Knoten
+         * verteilen. Deshalb lesen wir kurze Elemente ausserhalb von <main>
+         * als Ganzes statt nur einzelne Textknoten.
+         */
+        qsa('body p, body div, body span').forEach((node) => {
+            if (node.closest('main')) {
                 return;
             }
 
-            let match = text.match(
-                /Hello\s+([^(]+)\s*\(/i
-            );
+            const text = normaliseText(node.textContent);
 
-            if (!match) {
-                match = text.match(
-                    /Hallo\s+([^(]+)\s*\(/i
-                );
+            if (!text || text.length > 180) {
+                return;
             }
 
-            if (match && !meta.user) {
-                meta.user = normaliseText(match[1]);
-            }
-
-            match = text.match(
-                /Display\s+\d+\s+to\s+\d+\s+of\s+(\d+)\s+URLs?/i
-            );
+            let match = text.match(displayPattern);
 
             if (match) {
                 meta.totalLinks = Number(match[1]);
+                node.remove();
+                return;
             }
 
-            match = text.match(
-                /Overall,\s*tracking\s+(\d+)\s+links?,\s*(\d+)\s+clicks?/i
-            );
+            match = text.match(overallPattern);
 
             if (match) {
                 meta.totalLinks = Number(match[1]);
                 meta.totalClicks = Number(match[2]);
+                node.remove();
+                return;
             }
 
-            if (
-                /^(Hello|Hallo)\s+/i.test(text)
-                || /^Display\s+\d+\s+to\s+/i.test(text)
-                || /^Overall,\s*tracking\s+/i.test(text)
-            ) {
-                const parent = node.parentElement;
-                node.nodeValue = '';
+            match = text.match(helloPattern);
 
+            if (match && !meta.user) {
+                meta.user = normaliseText(match[1]);
+
+                /*
+                 * Den alten "Hello ..."-Text ebenfalls aus dem Legacy-
+                 * Header entfernen. Logout/Nav werden separat neu aufgebaut.
+                 */
                 if (
-                    parent
-                    && parent !== document.body
-                    && parent.childElementCount === 0
-                    && normaliseText(parent.textContent) === ''
+                    text.length < 120
+                    && !node.querySelector('#admin_menu')
                 ) {
-                    parent.remove();
+                    node.remove();
                 }
             }
         });
+
+        /*
+         * Falls YOURLS die Zusammenfassung als nackte Textknoten ausgibt,
+         * werden auch diese zuverlässig entfernt und ausgelesen.
+         */
+        const root = qs('#wrap') || document.body;
+        const walker = document.createTreeWalker(
+            root,
+            NodeFilter.SHOW_TEXT
+        );
+
+        const textNodes = [];
+
+        while (walker.nextNode()) {
+            textNodes.push(walker.currentNode);
+        }
+
+        textNodes.forEach((node) => {
+            const parent = node.parentElement;
+
+            if (parent && parent.closest('main')) {
+                return;
+            }
+
+            const text = normaliseText(node.nodeValue);
+
+            if (!text || text.length > 180) {
+                return;
+            }
+
+            let match = text.match(displayPattern);
+
+            if (match) {
+                meta.totalLinks = Number(match[1]);
+                node.nodeValue = '';
+                return;
+            }
+
+            match = text.match(overallPattern);
+
+            if (match) {
+                meta.totalLinks = Number(match[1]);
+                meta.totalClicks = Number(match[2]);
+                node.nodeValue = '';
+                return;
+            }
+
+            match = text.match(helloPattern);
+
+            if (match && !meta.user) {
+                meta.user = normaliseText(match[1]);
+            }
+        });
+
+        /*
+         * Sicherer Fallback: Für die aktuelle Seite lassen sich Anzahl Links
+         * und Klicks direkt aus der YOURLS-Tabelle berechnen. So bleiben die
+         * Kennzahlen auch dann brauchbar, wenn sich der Legacy-Text ändert.
+         */
+        const table = qs('#main_table');
+
+        if (table) {
+            const rows = qsa('tbody tr', table).filter((row) => {
+                return row.id !== 'nourl_found';
+            });
+
+            if (meta.totalLinks === null) {
+                meta.totalLinks = rows.length;
+            }
+
+            if (meta.totalClicks === null) {
+                meta.totalClicks = rows.reduce((sum, row) => {
+                    const cell = qs('td.clicks', row);
+                    const value = Number(
+                        normaliseText(cell?.textContent)
+                    );
+
+                    return sum + (
+                        Number.isFinite(value) ? value : 0
+                    );
+                }, 0);
+            }
+        }
 
         return meta;
     }
@@ -781,51 +856,102 @@
             return;
         }
 
-        const labels = new Map([
-            ['button_stats', 'Statistik'],
-            ['button_share', 'Teilen'],
-            ['button_edit', 'Bearbeiten'],
-            ['button_delete', 'Löschen'],
-            ['button_qr', 'QR-Code herunterladen']
-        ]);
+        const actionDefinitions = [
+            {
+                className: 'button_stats',
+                key: 'stats',
+                label: 'Statistik'
+            },
+            {
+                className: 'button_share',
+                key: 'share',
+                label: 'Teilen'
+            },
+            {
+                className: 'button_edit',
+                key: 'edit',
+                label: 'Bearbeiten'
+            },
+            {
+                className: 'button_qr',
+                key: 'qr',
+                label: 'QR-Code herunterladen'
+            },
+            {
+                className: 'button_delete',
+                key: 'delete',
+                label: 'Löschen'
+            }
+        ];
 
         const details = el('details', 'cp-row-actions');
-        const summary = el('summary', 'cp-row-actions-trigger', '•••');
-        summary.setAttribute('aria-label', 'Aktionen öffnen');
+        const summary = el(
+            'summary',
+            'cp-row-actions-trigger',
+            '•••'
+        );
+
+        summary.setAttribute(
+            'aria-label',
+            'Aktionen öffnen'
+        );
         summary.setAttribute('title', 'Aktionen');
 
         const menu = el('div', 'cp-row-actions-menu');
+        menu.setAttribute('role', 'menu');
 
-        actions.forEach((action) => {
-            const entry = document.createElement('a');
-            entry.href = action.getAttribute('href') || '#';
-            entry.id = action.id;
-            entry.className = action.className;
-            entry.onclick = action.onclick;
+        actionDefinitions.forEach((definition) => {
+            const action = actions.find((candidate) => {
+                return candidate.classList.contains(
+                    definition.className
+                );
+            });
 
-            let label = 'Aktion';
-
-            for (const [className, text] of labels) {
-                if (action.classList.contains(className)) {
-                    label = text;
-                    break;
-                }
+            if (!action) {
+                return;
             }
 
-            entry.textContent = label;
-            entry.title = label;
+            /*
+             * Wichtig: Wir verschieben den echten YOURLS-Link. Dadurch bleiben
+             * IDs, href und onclick-Funktionen vollständig intakt.
+             *
+             * Die alten .button_* Klassen werden entfernt, weil YOURLS und das
+             * QR-Plugin diese als kleine Icon-Buttons positionieren. Genau das
+             * hat im Dropdown zum Überlappen der Funktionen geführt.
+             */
+            action.classList.remove(
+                'button',
+                'button_stats',
+                'button_share',
+                'button_edit',
+                'button_delete',
+                'button_qr'
+            );
 
-            if (action.classList.contains('button_delete')) {
-                entry.classList.add('cp-danger-action');
-            }
+            action.classList.add(
+                'cp-menu-action',
+                `cp-menu-action-${definition.key}`
+            );
 
-            menu.append(entry);
+            action.textContent = definition.label;
+            action.title = definition.label;
+            action.setAttribute('role', 'menuitem');
+
+            action.addEventListener('click', () => {
+                details.open = false;
+            });
+
+            menu.append(action);
         });
 
-        const hiddenInputs = qsa('input[type="hidden"]', cell);
+        const hiddenInputs = qsa(
+            'input[type="hidden"]',
+            cell
+        );
 
-        cell.replaceChildren(details, ...hiddenInputs);
+        cell.replaceChildren();
         details.append(summary, menu);
+        cell.append(details, ...hiddenInputs);
     }
 
     function enhanceLinkRows(table) {
@@ -927,12 +1053,54 @@
             const observer = new MutationObserver(() => {
                 formatDates(table);
                 enhanceLinkRows(table);
+                updateDashboardStats();
             });
 
             observer.observe(tbody, {
                 childList: true,
                 subtree: true
             });
+        }
+    }
+
+    function updateDashboardStats() {
+        const table = qs('#main_table');
+
+        if (!table) {
+            return;
+        }
+
+        const rows = qsa('tbody tr', table).filter((row) => {
+            return row.id !== 'nourl_found';
+        });
+
+        const clicks = rows.reduce((sum, row) => {
+            const value = Number(
+                normaliseText(
+                    qs('td.clicks', row)?.textContent
+                )
+            );
+
+            return sum + (
+                Number.isFinite(value) ? value : 0
+            );
+        }, 0);
+
+        const values = qsa('.cp-stat-value');
+
+        /*
+         * Diese Werte sind der sichere Fallback für die aktuell dargestellten
+         * Links. Beim initialen Laden bevorzugt readLegacyMeta weiterhin die
+         * vollständigen YOURLS-Gesamtwerte, sofern verfügbar.
+         */
+        if (values.length >= 2) {
+            if (values[0].textContent.trim() === '–') {
+                values[0].textContent = String(rows.length);
+            }
+
+            if (values[1].textContent.trim() === '–') {
+                values[1].textContent = String(clicks);
+            }
         }
     }
 
@@ -1169,6 +1337,7 @@
         enhanceShortener();
         enhanceShareBoxes();
         buildLinksSection();
+        updateDashboardStats();
         enhanceUsersPage();
         enhanceQrDialog();
         closeMenusOnOutsideClick();
