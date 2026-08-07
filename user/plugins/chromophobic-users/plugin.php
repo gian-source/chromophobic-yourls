@@ -4,7 +4,7 @@
 Plugin Name: Chromophobic Users
 Plugin URI: https://github.com/gian-source/chromophobic-yourls
 Description: Datenbankbasierte Benutzerverwaltung für Chromophobic YOURLS.
-Version: 0.2.0
+Version: 0.3.0
 Author: gian-source
 Author URI: https://github.com/gian-source
 */
@@ -27,6 +27,22 @@ yourls_add_action(
 yourls_add_filter(
     'admin_links',
     'chromophobic_users_add_admin_link'
+);
+
+
+// Datenbank-Benutzer in die bestehende YOURLS-Authentifizierung integrieren.
+yourls_add_filter(
+    'shunt_is_valid_user',
+    'chromophobic_users_authenticate',
+    10,
+    1
+);
+
+yourls_add_filter(
+    'set_cookie_value',
+    'chromophobic_users_filter_cookie_value',
+    10,
+    2
 );
 
 /**
@@ -95,6 +111,11 @@ function chromophobic_users_maybe_install(): void
  */
 function chromophobic_users_add_admin_link(array $links): array
 {
+    if (!chromophobic_users_current_user_is_admin()) {
+        unset($links['tools'], $links['plugins']);
+        return $links;
+    }
+
     $links['chromophobic_users'] = [
         'url' =>
             yourls_admin_url(
@@ -112,6 +133,14 @@ function chromophobic_users_add_admin_link(array $links): array
  */
 function chromophobic_users_admin_page(): void
 {
+    if (!chromophobic_users_current_user_is_admin()) {
+        yourls_die(
+            'Du hast keine Berechtigung für die Benutzerverwaltung.',
+            'Zugriff verweigert',
+            403
+        );
+    }
+
     chromophobic_users_handle_create();
     chromophobic_users_handle_update();
     chromophobic_users_handle_status();
@@ -533,6 +562,13 @@ function chromophobic_users_handle_create(): void
         );
     }
 
+    if (chromophobic_users_is_config_username($username)) {
+        chromophobic_users_redirect(
+            'Dieser Benutzername ist für den Notfall-Administrator reserviert.',
+            'error'
+        );
+    }
+
     $table = CHROMOPHOBIC_USERS_TABLE;
 
     $existing = yourls_get_db(
@@ -671,6 +707,13 @@ function chromophobic_users_handle_update(): void
     if (!chromophobic_users_valid_username($username)) {
         chromophobic_users_redirect(
             'Der Benutzername enthält ungültige Zeichen.',
+            'error'
+        );
+    }
+
+    if (chromophobic_users_is_config_username($username)) {
+        chromophobic_users_redirect(
+            'Dieser Benutzername ist für den Notfall-Administrator reserviert.',
             'error'
         );
     }
@@ -1054,5 +1097,325 @@ function chromophobic_users_esc_attr(string $value): string
         $value,
         ENT_QUOTES | ENT_SUBSTITUTE,
         'UTF-8'
+    );
+}
+
+/**
+ * Datenbank-Benutzer in die YOURLS-Anmeldung integrieren.
+ *
+ * Konfigurations-Benutzer bleiben als Notfallzugang vollständig erhalten.
+ *
+ * @param mixed $pre Shunt-Standardwert von YOURLS.
+ * @return mixed
+ */
+function chromophobic_users_authenticate($pre)
+{
+    if (yourls_shunt_default() !== $pre) {
+        return $pre;
+    }
+
+    // Logout weiterhin vollständig von YOURLS behandeln lassen.
+    if (
+        isset($_GET['action'])
+        && $_GET['action'] === 'logout'
+    ) {
+        return $pre;
+    }
+
+    // Anmeldung mit Benutzername und Passwort.
+    if (
+        isset($_REQUEST['username'], $_REQUEST['password'])
+        && $_REQUEST['username'] !== ''
+        && $_REQUEST['password'] !== ''
+    ) {
+        $username = trim((string) $_REQUEST['username']);
+        $password = (string) $_REQUEST['password'];
+
+        // Bestehende config.php-Benutzer immer YOURLS selbst prüfen lassen.
+        if (chromophobic_users_is_config_username($username)) {
+            return $pre;
+        }
+
+        $user = chromophobic_users_get_auth_user($username);
+
+        // Kein DB-Benutzer: YOURLS darf weiterhin seine Standardlogik versuchen.
+        if (!$user) {
+            return $pre;
+        }
+
+        if (!yourls_is_API()) {
+            yourls_verify_nonce('admin_login');
+        }
+
+        if (
+            $user->status !== 'active'
+            || !password_verify($password, $user->password_hash)
+        ) {
+            return false;
+        }
+
+        yourls_set_user($user->username);
+        chromophobic_users_update_last_login((int) $user->id);
+        chromophobic_users_maybe_rehash_password($user, $password);
+
+        return true;
+    }
+
+    // Normale Admin-Aufrufe über das Auth-Cookie.
+    if (
+        !yourls_is_API()
+        && isset($_COOKIE[yourls_cookie_name()])
+    ) {
+        $cookie = (string) $_COOKIE[yourls_cookie_name()];
+        $user = chromophobic_users_find_user_by_cookie($cookie);
+
+        if ($user) {
+            yourls_set_user($user->username);
+
+            if (chromophobic_users_request_is_restricted($user)) {
+                yourls_die(
+                    'Du hast keine Berechtigung für diesen Bereich.',
+                    'Zugriff verweigert',
+                    403
+                );
+            }
+
+            return true;
+        }
+    }
+
+    return $pre;
+}
+
+/**
+ * Für DB-Benutzer ein Cookie erzeugen, das auch vom Passwort-Hash abhängt.
+ * Dadurch werden bestehende Sitzungen nach einer Passwortänderung ungültig.
+ *
+ * @param string $value YOURLS-Standardwert.
+ * @param string $username Benutzername.
+ * @return string
+ */
+function chromophobic_users_filter_cookie_value(
+    string $value,
+    string $username
+): string {
+    if ($username === '' || chromophobic_users_is_config_username($username)) {
+        return $value;
+    }
+
+    $user = chromophobic_users_get_auth_user($username);
+
+    if (!$user) {
+        return $value;
+    }
+
+    return chromophobic_users_db_cookie_value($user);
+}
+
+/**
+ * Benutzer inklusive Authentifizierungsdaten laden.
+ */
+function chromophobic_users_get_auth_user(string $username): ?object
+{
+    $table = CHROMOPHOBIC_USERS_TABLE;
+
+    $user = yourls_get_db(
+        'chromophobic-users-auth-get'
+    )->fetchObject(
+        "
+        SELECT
+            `id`,
+            `username`,
+            `display_name`,
+            `email`,
+            `password_hash`,
+            `role`,
+            `status`,
+            `last_login_at`
+        FROM `$table`
+        WHERE `username` = :username
+        LIMIT 1
+        ",
+        [
+            'username' => $username,
+        ]
+    );
+
+    return $user ?: null;
+}
+
+/**
+ * Aktive DB-Benutzer anhand ihres Cookies finden.
+ */
+function chromophobic_users_find_user_by_cookie(string $cookie): ?object
+{
+    $table = CHROMOPHOBIC_USERS_TABLE;
+
+    $users = yourls_get_db(
+        'chromophobic-users-auth-cookie-list'
+    )->fetchObjects(
+        "
+        SELECT
+            `id`,
+            `username`,
+            `display_name`,
+            `email`,
+            `password_hash`,
+            `role`,
+            `status`,
+            `last_login_at`
+        FROM `$table`
+        WHERE `status` = 'active'
+        "
+    );
+
+    foreach ($users as $user) {
+        if (hash_equals(
+            chromophobic_users_db_cookie_value($user),
+            $cookie
+        )) {
+            return $user;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Cookie-Wert für einen DB-Benutzer berechnen.
+ */
+function chromophobic_users_db_cookie_value(object $user): string
+{
+    return yourls_salt(
+        'chromophobic-db-user|'
+        . $user->username
+        . '|'
+        . $user->password_hash
+    );
+}
+
+/**
+ * Zeitpunkt der letzten erfolgreichen Passwort-Anmeldung speichern.
+ */
+function chromophobic_users_update_last_login(int $user_id): void
+{
+    $table = CHROMOPHOBIC_USERS_TABLE;
+
+    yourls_get_db(
+        'chromophobic-users-auth-last-login'
+    )->fetchAffected(
+        "
+        UPDATE `$table`
+        SET `last_login_at` = :last_login_at
+        WHERE `id` = :id
+        ",
+        [
+            'last_login_at' => date('Y-m-d H:i:s'),
+            'id' => $user_id,
+        ]
+    );
+}
+
+/**
+ * Passwort-Hash bei Bedarf auf den aktuellen PHP-Standard aktualisieren.
+ */
+function chromophobic_users_maybe_rehash_password(
+    object $user,
+    string $password
+): void {
+    if (!password_needs_rehash($user->password_hash, PASSWORD_DEFAULT)) {
+        return;
+    }
+
+    $table = CHROMOPHOBIC_USERS_TABLE;
+
+    yourls_get_db(
+        'chromophobic-users-auth-rehash'
+    )->fetchAffected(
+        "
+        UPDATE `$table`
+        SET
+            `password_hash` = :password_hash,
+            `updated_at` = :updated_at
+        WHERE `id` = :id
+        ",
+        [
+            'password_hash' => password_hash(
+                $password,
+                PASSWORD_DEFAULT
+            ),
+            'updated_at' => date('Y-m-d H:i:s'),
+            'id' => (int) $user->id,
+        ]
+    );
+}
+
+/**
+ * Prüfen, ob ein Benutzername bereits in config.php existiert.
+ */
+function chromophobic_users_is_config_username(string $username): bool
+{
+    global $yourls_user_passwords;
+
+    return isset($yourls_user_passwords[$username]);
+}
+
+/**
+ * Aktuell angemeldeten DB-Benutzer laden.
+ * config.php-Benutzer liefern bewusst null und gelten als Notfall-Admins.
+ */
+function chromophobic_users_current_db_user(): ?object
+{
+    if (!defined('YOURLS_USER')) {
+        return null;
+    }
+
+    if (chromophobic_users_is_config_username(YOURLS_USER)) {
+        return null;
+    }
+
+    return chromophobic_users_get_auth_user(YOURLS_USER);
+}
+
+/**
+ * Prüfen, ob der aktuelle Benutzer administrative Rechte hat.
+ */
+function chromophobic_users_current_user_is_admin(): bool
+{
+    if (!defined('YOURLS_USER')) {
+        return false;
+    }
+
+    // Bestehende YOURLS-config.php-Zugänge sind unser Notfall-Admin.
+    if (chromophobic_users_is_config_username(YOURLS_USER)) {
+        return true;
+    }
+
+    $user = chromophobic_users_current_db_user();
+
+    return $user
+        && $user->status === 'active'
+        && $user->role === 'admin';
+}
+
+/**
+ * Sensible YOURLS-Bereiche für normale DB-Benutzer sperren.
+ */
+function chromophobic_users_request_is_restricted(object $user): bool
+{
+    if ($user->role === 'admin') {
+        return false;
+    }
+
+    $script = basename((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+
+    return in_array(
+        $script,
+        [
+            'plugins.php',
+            'tools.php',
+            'upgrade.php',
+        ],
+        true
     );
 }
