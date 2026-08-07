@@ -141,7 +141,6 @@ function chromophobic_users_admin_page(): void
         <?php
         yourls_nonce_field(
         'chromophobic_users_create',
-        'chromophobic_users_nonce'
     );
         ?>
 
@@ -396,8 +395,7 @@ function chromophobic_users_handle_create(): void
     }
 
     yourls_verify_nonce(
-        'chromophobic_users_create',
-        $_POST['chromophobic_users_nonce'] ?? ''
+    'chromophobic_users_create'
     );
 
     $username = trim(
