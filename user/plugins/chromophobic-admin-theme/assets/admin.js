@@ -5,342 +5,586 @@
     const qsa = (selector, root = document) =>
         Array.from(root.querySelectorAll(selector));
 
-    function element(tag, className, text) {
+    function el(tag, className = '', text = '') {
         const node = document.createElement(tag);
 
         if (className) {
             node.className = className;
         }
 
-        if (typeof text === 'string') {
+        if (text) {
             node.textContent = text;
         }
 
         return node;
     }
 
-    function currentPath() {
-        return window.location.pathname + window.location.search;
+    function normaliseText(value) {
+        return String(value || '')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
-    function initBody() {
-        document.body.classList.add('cp-admin-v4');
-
-        if (qs('#login')) {
-            document.body.classList.add('cp-login-page');
+    function escapeSelector(value) {
+        if (window.CSS && typeof window.CSS.escape === 'function') {
+            return window.CSS.escape(value);
         }
 
-        if (qs('#main_table')) {
-            document.body.classList.add('cp-links-page');
-        }
-
-        if (qs('.cp-users-page')) {
-            document.body.classList.add('cp-users-admin-page');
-        }
+        return String(value).replace(/["\\]/g, '\\$&');
     }
 
-    function enhanceBrand() {
-        const header = qs('header[role="banner"]');
+    function readLegacyMeta() {
+        const meta = {
+            user: '',
+            totalLinks: null,
+            totalClicks: null
+        };
 
-        if (!header || header.dataset.cpEnhanced === '1') {
-            return;
+        const walker = document.createTreeWalker(
+            document.body,
+            NodeFilter.SHOW_TEXT
+        );
+
+        const nodes = [];
+
+        while (walker.nextNode()) {
+            nodes.push(walker.currentNode);
         }
 
-        header.dataset.cpEnhanced = '1';
+        nodes.forEach((node) => {
+            const text = normaliseText(node.nodeValue);
 
-        const originalHeading = qs('h1', header);
-        const originalLink = originalHeading
-            ? qs('a', originalHeading)
-            : null;
-
-        if (originalHeading) {
-            originalHeading.classList.add('cp-original-brand');
-        }
-
-        const brand = document.createElement('a');
-        brand.className = 'cp-brand';
-        brand.href = originalLink
-            ? originalLink.href
-            : '/admin/';
-        brand.setAttribute('aria-label', 'Chromophobic Links – Startseite');
-
-        const mark = element('span', 'cp-brand-mark');
-        mark.setAttribute('aria-hidden', 'true');
-
-        const wordmark = element('span', 'cp-brand-wordmark');
-        const name = element('strong', '', 'chromophobic');
-        const product = element('span', '', 'Links');
-
-        wordmark.append(name, product);
-        brand.append(mark, wordmark);
-        header.append(brand);
-    }
-
-    function enhanceNavigation() {
-        const nav = qs('nav[role="navigation"]');
-
-        if (!nav || nav.dataset.cpEnhanced === '1') {
-            return;
-        }
-
-        nav.dataset.cpEnhanced = '1';
-        nav.setAttribute('aria-label', 'Hauptnavigation');
-
-        const translations = new Map([
-            ['Admin interface', 'Links'],
-            ['Admin Interface', 'Links'],
-            ['Tools', 'Werkzeuge'],
-            ['Manage Plugins', 'Plugins'],
-            ['Plugins', 'Plugins'],
-            ['Help', 'Hilfe'],
-            ['Logout', 'Abmelden'],
-            ['Benutzer', 'Benutzer']
-        ]);
-
-        qsa('a', nav).forEach((link) => {
-            const original = link.textContent.trim();
-
-            if (translations.has(original)) {
-                link.textContent = translations.get(original);
-            }
-
-            const href = link.getAttribute('href') || '';
-
-            if (!href || href === '#') {
+            if (!text) {
                 return;
             }
 
-            let isActive = false;
+            let match = text.match(
+                /Hello\s+([^(]+)\s*\(/i
+            );
 
-            try {
-                const target = new URL(href, window.location.href);
+            if (!match) {
+                match = text.match(
+                    /Hallo\s+([^(]+)\s*\(/i
+                );
+            }
+
+            if (match && !meta.user) {
+                meta.user = normaliseText(match[1]);
+            }
+
+            match = text.match(
+                /Display\s+\d+\s+to\s+\d+\s+of\s+(\d+)\s+URLs?/i
+            );
+
+            if (match) {
+                meta.totalLinks = Number(match[1]);
+            }
+
+            match = text.match(
+                /Overall,\s*tracking\s+(\d+)\s+links?,\s*(\d+)\s+clicks?/i
+            );
+
+            if (match) {
+                meta.totalLinks = Number(match[1]);
+                meta.totalClicks = Number(match[2]);
+            }
+
+            if (
+                /^(Hello|Hallo)\s+/i.test(text)
+                || /^Display\s+\d+\s+to\s+/i.test(text)
+                || /^Overall,\s*tracking\s+/i.test(text)
+            ) {
+                const parent = node.parentElement;
+                node.nodeValue = '';
 
                 if (
-                    target.pathname.endsWith('/admin/index.php')
-                    && window.location.pathname.endsWith('/admin/index.php')
+                    parent
+                    && parent !== document.body
+                    && parent.childElementCount === 0
+                    && normaliseText(parent.textContent) === ''
                 ) {
-                    isActive = true;
-                } else if (
-                    target.pathname === window.location.pathname
-                    && target.searchParams.get('page') ===
-                        new URL(window.location.href).searchParams.get('page')
-                ) {
-                    isActive = true;
+                    parent.remove();
                 }
-            } catch (error) {
-                // Ein nicht standardmässiger Link bleibt einfach ohne Aktivstatus.
-            }
-
-            if (isActive) {
-                link.classList.add('cp-nav-current');
-                link.setAttribute('aria-current', 'page');
             }
         });
+
+        return meta;
     }
 
-    function createField(labelText, input, className = '') {
-        const label = element(
-            'label',
-            `cp-field ${className}`.trim()
-        );
-        const title = element('span', 'cp-field-label', labelText);
+    function classifyNavLink(link) {
+        const text = normaliseText(link.textContent).toLowerCase();
+        const href = link.getAttribute('href') || '';
 
-        label.append(title, input);
+        let url;
+
+        try {
+            url = new URL(href, window.location.href);
+        } catch (error) {
+            return null;
+        }
+
+        const page = url.searchParams.get('page') || '';
+        const path = url.pathname.toLowerCase();
+
+        if (
+            /logout|abmelden/.test(text)
+            || url.searchParams.get('action') === 'logout'
+            || /logout/.test(href)
+        ) {
+            return {
+                key: 'logout',
+                label: 'Abmelden',
+                href: url.href
+            };
+        }
+
+        if (
+            page === 'chromophobic-users'
+            || /benutzer|users?/.test(text)
+        ) {
+            return {
+                key: 'users',
+                label: 'Benutzer',
+                href: url.href
+            };
+        }
+
+        if (
+            /plugins\.php$/.test(path)
+            && !page
+        ) {
+            return {
+                key: 'plugins',
+                label: 'Plugins',
+                href: url.href
+            };
+        }
+
+        if (
+            /tools\.php$/.test(path)
+            || /werkzeuge|tools/.test(text)
+        ) {
+            return {
+                key: 'tools',
+                label: 'Werkzeuge',
+                href: url.href
+            };
+        }
+
+        if (
+            /help/.test(path)
+            || /hilfe|help/.test(text)
+        ) {
+            return {
+                key: 'help',
+                label: 'Hilfe',
+                href: url.href
+            };
+        }
+
+        if (
+            /index\.php$/.test(path)
+            || /admin interface/.test(text)
+            || text === 'links'
+        ) {
+            return {
+                key: 'links',
+                label: 'Links',
+                href: url.href
+            };
+        }
+
+        return null;
+    }
+
+    function isCurrentNavItem(item) {
+        const current = new URL(window.location.href);
+        const target = new URL(item.href);
+
+        if (item.key === 'links') {
+            return (
+                /\/admin\/(?:index\.php)?$/.test(current.pathname)
+                && !current.searchParams.get('page')
+            );
+        }
+
+        if (item.key === 'users') {
+            return current.searchParams.get('page') === 'chromophobic-users';
+        }
+
+        return (
+            current.pathname === target.pathname
+            && (
+                !target.searchParams.get('page')
+                || current.searchParams.get('page') ===
+                    target.searchParams.get('page')
+            )
+        );
+    }
+
+    function buildAppHeader(meta) {
+        if (qs('.cp-app-header')) {
+            return;
+        }
+
+        const legacyHeader = qs('header[role="banner"]');
+        const legacyNav = qs('nav[role="navigation"]');
+
+        const rawLinks = legacyNav
+            ? qsa('a', legacyNav)
+            : qsa('#admin_menu a');
+
+        const unique = new Map();
+
+        rawLinks.forEach((link) => {
+            const item = classifyNavLink(link);
+
+            if (item && !unique.has(item.key)) {
+                unique.set(item.key, item);
+            }
+        });
+
+        if (!unique.has('logout')) {
+            qsa('a').some((link) => {
+                const item = classifyNavLink(link);
+
+                if (item?.key === 'logout') {
+                    unique.set('logout', item);
+                    return true;
+                }
+
+                return false;
+            });
+        }
+
+        const desiredOrder = [
+            'links',
+            'users',
+            'plugins',
+            'tools',
+            'help'
+        ];
+
+        const header = el('header', 'cp-app-header');
+        const inner = el('div', 'cp-app-header-inner');
+
+        const brand = document.createElement('a');
+        brand.className = 'cp-app-brand';
+        brand.href = unique.get('links')?.href || '/admin/';
+        brand.setAttribute(
+            'aria-label',
+            'Chromophobic Links – Startseite'
+        );
+
+        const mark = el('span', 'cp-app-mark');
+        mark.setAttribute('aria-hidden', 'true');
+
+        const wordmark = el('span', 'cp-app-wordmark');
+        wordmark.append(
+            el('strong', '', 'chromophobic'),
+            el('span', '', 'links')
+        );
+
+        brand.append(mark, wordmark);
+
+        const nav = el('nav', 'cp-app-nav');
+        nav.setAttribute('aria-label', 'Hauptnavigation');
+
+        desiredOrder.forEach((key) => {
+            const item = unique.get(key);
+
+            if (!item) {
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = item.href;
+            link.textContent = item.label;
+
+            if (isCurrentNavItem(item)) {
+                link.classList.add('is-current');
+                link.setAttribute('aria-current', 'page');
+            }
+
+            nav.append(link);
+        });
+
+        const account = el('div', 'cp-app-account');
+
+        if (meta.user) {
+            account.append(
+                el('span', 'cp-app-user', meta.user)
+            );
+        }
+
+        const logout = unique.get('logout');
+
+        if (logout) {
+            const logoutLink = document.createElement('a');
+            logoutLink.className = 'cp-app-logout';
+            logoutLink.href = logout.href;
+            logoutLink.textContent = 'Abmelden';
+            account.append(logoutLink);
+        }
+
+        inner.append(brand, nav, account);
+        header.append(inner);
+
+        const wrap = qs('#wrap') || document.body;
+        wrap.prepend(header);
+
+        if (legacyHeader) {
+            legacyHeader.hidden = true;
+        }
+
+        if (legacyNav) {
+            legacyNav.hidden = true;
+        }
+    }
+
+    function iconLink() {
+        const icon = el('span', 'cp-link-icon');
+        icon.setAttribute('aria-hidden', 'true');
+
+        return icon;
+    }
+
+    function buildPageHeader(meta) {
+        const main = qs('main[role="main"]');
+
+        if (
+            !main
+            || qs('.cp-dashboard-header', main)
+            || (
+                !qs('#new_url_form', main)
+                && !qs('#main_table', main)
+            )
+        ) {
+            return;
+        }
+
+        const header = el('section', 'cp-dashboard-header');
+
+        const copy = el('div', 'cp-dashboard-copy');
+        copy.append(
+            el('p', 'cp-kicker', 'Link-Shortener'),
+            el('h1', '', 'Kurzlinks'),
+            el(
+                'p',
+                'cp-dashboard-lead',
+                'Links und QR-Codes zentral erstellen und verwalten.'
+            )
+        );
+
+        const stats = el('div', 'cp-dashboard-stats');
+
+        const linkStat = el('div', 'cp-stat');
+        linkStat.append(
+            el(
+                'strong',
+                'cp-stat-value',
+                meta.totalLinks === null
+                    ? '–'
+                    : String(meta.totalLinks)
+            ),
+            el('span', 'cp-stat-label', 'Links')
+        );
+
+        const clickStat = el('div', 'cp-stat');
+        clickStat.append(
+            el(
+                'strong',
+                'cp-stat-value',
+                meta.totalClicks === null
+                    ? '–'
+                    : String(meta.totalClicks)
+            ),
+            el('span', 'cp-stat-label', 'Klicks gesamt')
+        );
+
+        stats.append(linkStat, clickStat);
+        header.append(copy, stats);
+        main.prepend(header);
+    }
+
+    function createField(
+        labelText,
+        input,
+        helpText = '',
+        className = ''
+    ) {
+        const label = el(
+            'label',
+            `cp-form-field ${className}`.trim()
+        );
+
+        const labelTextNode = el(
+            'span',
+            'cp-form-label',
+            labelText
+        );
+
+        label.append(labelTextNode, input);
+
+        if (helpText) {
+            label.append(
+                el('small', 'cp-form-help', helpText)
+            );
+        }
 
         return label;
     }
 
-    function enhanceShortenerForm() {
+    function enhanceShortener() {
+        const newUrl = qs('#new_url');
         const form = qs('#new_url_form');
 
-        if (!form || form.dataset.cpEnhanced === '1') {
+        if (
+            !newUrl
+            || !form
+            || form.dataset.cpV5 === '1'
+        ) {
             return;
         }
 
-        const urlInput = qs('#add-url');
-        const keywordInput = qs('#add-keyword');
-        const nonce = qs('#nonce-add');
-        const button = qs('#add-button');
-        const feedback = qs('#feedback');
+        const urlInput = qs('#add-url', form);
+        const keywordInput = qs('#add-keyword', form);
+        const nonce = qs('#nonce-add', form);
+        const button = qs('#add-button', form);
 
         if (!urlInput || !keywordInput || !nonce || !button) {
             return;
         }
 
-        form.dataset.cpEnhanced = '1';
-        form.classList.add('cp-shortener-form');
+        form.dataset.cpV5 = '1';
 
-        urlInput.placeholder = 'https://example.com/sehr-lange-url';
-        urlInput.setAttribute('aria-describedby', 'cp-url-help');
-
-        keywordInput.placeholder = 'z. B. kampagne';
-        keywordInput.setAttribute('aria-describedby', 'cp-keyword-help');
+        urlInput.placeholder = 'https://example.com/zieladresse';
+        keywordInput.placeholder = 'kampagne';
 
         button.value = 'Kurzlink erstellen';
-        button.classList.add('cp-primary-action');
 
-        const pageIntro = element('section', 'cp-page-intro');
-        const introCopy = element('div', 'cp-page-intro-copy');
-        introCopy.append(
-            element('p', 'cp-eyebrow', 'Link-Shortener'),
-            element('h1', '', 'Links einfach verwalten'),
-            element(
+        const card = el('section', 'cp-create-card');
+
+        const heading = el('div', 'cp-card-heading');
+        const headingCopy = el('div');
+        headingCopy.append(
+            el('p', 'cp-kicker', 'Neuer Link'),
+            el('h2', '', 'Link kürzen'),
+            el(
                 'p',
-                'cp-lead',
-                'Erstelle kurze Links, behalte bestehende Ziele im Blick und lade QR-Codes direkt herunter.'
-            )
-        );
-        pageIntro.append(introCopy);
-
-        const newUrl = qs('#new_url');
-        if (newUrl && !qs('.cp-page-intro')) {
-            newUrl.parentNode.insertBefore(pageIntro, newUrl);
-        }
-
-        const panel = element('div', 'cp-shortener-panel');
-        const header = element('div', 'cp-shortener-header');
-        const headerText = element('div');
-
-        headerText.append(
-            element('p', 'cp-eyebrow', 'Neuer Kurzlink'),
-            element('h2', '', 'Link kürzen'),
-            element(
-                'p',
-                'cp-card-copy',
-                'Füge die Zieladresse ein. Einen eigenen Kurzname kannst du optional vergeben.'
+                'cp-card-description',
+                'Zieladresse einfügen und bei Bedarf einen eigenen Kurznamen festlegen.'
             )
         );
 
-        const icon = element('span', 'cp-shortener-icon');
-        icon.setAttribute('aria-hidden', 'true');
+        heading.append(headingCopy, iconLink());
 
-        header.append(headerText, icon);
+        const body = el('div', 'cp-create-body');
 
-        const fields = element('div', 'cp-shortener-fields');
-
-        const urlField = createField('Lange URL', urlInput, 'cp-field-url');
-        urlField.append(
-            element(
-                'small',
-                'cp-field-help',
-                'Die vollständige Zieladresse inklusive https://'
-            )
+        const urlField = createField(
+            'Zieladresse',
+            urlInput,
+            'Vollständige URL inklusive https://',
+            'cp-url-field'
         );
-        qs('small', urlField).id = 'cp-url-help';
 
-        const aliasShell = element('div', 'cp-alias-input');
-        const prefix = element(
+        const aliasShell = el('div', 'cp-alias-control');
+        const prefix = el(
             'span',
             'cp-alias-prefix',
             `${window.location.host}/`
         );
+
         aliasShell.append(prefix, keywordInput);
 
-        const aliasField = element('label', 'cp-field cp-field-keyword');
+        const aliasField = el(
+            'label',
+            'cp-form-field cp-alias-field'
+        );
         aliasField.append(
-            element('span', 'cp-field-label', 'Eigener Kurzname'),
+            el('span', 'cp-form-label', 'Kurzname'),
             aliasShell,
-            element(
+            el(
                 'small',
-                'cp-field-help',
-                'Optional – leer lassen für einen automatisch erzeugten Kurzlink.'
+                'cp-form-help',
+                'Optional – leer lassen für einen automatisch erzeugten Namen.'
             )
         );
-        qs('small', aliasField).id = 'cp-keyword-help';
 
-        const action = element('div', 'cp-shortener-action');
-        action.append(button);
+        const footer = el('div', 'cp-create-footer');
+        const hint = el(
+            'p',
+            'cp-create-hint',
+            'Der Kurzlink kann später geändert werden, ohne einen neuen QR-Code drucken zu müssen.'
+        );
 
-        fields.append(urlField, aliasField, action);
-        panel.append(header, fields, nonce);
+        button.classList.add('cp-primary-button');
 
-        form.replaceChildren(panel);
+        footer.append(hint, button);
+        body.append(urlField, aliasField, footer);
 
+        card.append(heading, body, nonce);
+        form.replaceChildren(card);
+        newUrl.classList.add('cp-new-url');
+
+        const feedback = qs('#feedback');
         if (feedback) {
             feedback.classList.add('cp-feedback');
-            form.after(feedback);
         }
-
-        const host = newUrl ? qs(':scope > div', newUrl) : null;
-        if (host) {
-            host.classList.add('cp-shortener-host');
-        }
-
-        urlInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                button.click();
-            }
-        });
-
-        keywordInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                button.click();
-            }
-        });
     }
 
     function enhanceShareBoxes() {
-        const boxes = qs('#shareboxes');
+        const shareboxes = qs('#shareboxes');
 
-        if (!boxes || boxes.dataset.cpEnhanced === '1') {
+        if (!shareboxes || shareboxes.dataset.cpV5 === '1') {
             return;
         }
 
-        boxes.dataset.cpEnhanced = '1';
-        boxes.classList.add('cp-share-result');
+        shareboxes.dataset.cpV5 = '1';
+        shareboxes.classList.add('cp-shareboxes');
 
         const copyHeading = qs('#copybox h2');
-        const shareHeading = qs('#sharebox h2');
-
         if (copyHeading) {
-            copyHeading.textContent = 'Dein Kurzlink';
+            copyHeading.textContent = 'Kurzlink erstellt';
         }
 
+        const shareHeading = qs('#sharebox h2');
         if (shareHeading) {
             shareHeading.textContent = 'Teilen';
         }
+    }
 
-        const copyLink = qs('#copylink');
-        if (copyLink) {
-            copyLink.setAttribute('aria-label', 'Erstellter Kurzlink');
+    function translateSelectOptions(select, mapping) {
+        if (!select) {
+            return;
         }
-    }
 
-    function makeFilterField(label, nodes) {
-        const field = element('label', 'cp-filter-field');
-        field.append(element('span', 'cp-filter-label', label));
+        qsa('option', select).forEach((option) => {
+            const text = normaliseText(option.textContent);
 
-        const line = element('span', 'cp-filter-control');
-
-        nodes.filter(Boolean).forEach((node) => {
-            line.append(node);
+            if (mapping[text]) {
+                option.textContent = mapping[text];
+            }
         });
-
-        field.append(line);
-
-        return field;
     }
 
-    function enhanceFilterForm(tableWrapper) {
+    function buildFilterPanel(tableSection) {
         const filterForm = qs('#filter_form');
 
         if (
             !filterForm
-            || filterForm.dataset.cpEnhanced === '1'
-            || !tableWrapper
+            || filterForm.dataset.cpV5 === '1'
         ) {
-            return;
+            return null;
         }
 
-        filterForm.dataset.cpEnhanced = '1';
+        filterForm.dataset.cpV5 = '1';
 
         const form = qs('form', filterForm);
         const options = qs('#filter_options', filterForm);
 
         if (!form || !options) {
-            return;
+            return null;
         }
 
         const search = qs('[name="search"]', form);
@@ -357,142 +601,332 @@
         const clear = qs('#submit-clear-filter', form);
 
         if (search) {
-            search.placeholder = 'Link, Titel, URL oder IP';
+            search.placeholder = 'Link oder Ziel suchen';
         }
 
         if (submit) {
-            submit.value = 'Filter anwenden';
+            submit.value = 'Anwenden';
         }
 
         if (clear) {
             clear.value = 'Zurücksetzen';
         }
 
-        const grid = element('div', 'cp-filter-grid');
+        translateSelectOptions(searchIn, {
+            'All fields': 'Alle Felder',
+            'Short URL': 'Kurzlink',
+            'URL': 'Ziel-URL',
+            'Title': 'Titel',
+            'IP': 'IP-Adresse'
+        });
 
-        grid.append(
-            makeFilterField('Suchen', [search, searchIn]),
-            makeFilterField('Sortieren', [sortBy, sortOrder]),
-            makeFilterField('Links pro Seite', [perPage]),
-            makeFilterField('Klicks', [clickFilter, clickLimit]),
-            makeFilterField('Zeitraum', [dateFilter, dateFirst, dateSecond])
+        translateSelectOptions(sortBy, {
+            'Short URL': 'Kurzlink',
+            'URL': 'Ziel-URL',
+            'Title': 'Titel',
+            'Date': 'Datum',
+            'IP': 'IP-Adresse',
+            'Clicks': 'Klicks'
+        });
+
+        translateSelectOptions(sortOrder, {
+            'Ascending': 'Aufsteigend',
+            'Descending': 'Absteigend'
+        });
+
+        translateSelectOptions(clickFilter, {
+            'more': 'mehr',
+            'less': 'weniger'
+        });
+
+        translateSelectOptions(dateFilter, {
+            'before': 'vor',
+            'after': 'nach',
+            'between': 'zwischen'
+        });
+
+        const panel = el('details', 'cp-filter');
+        const summary = el('summary', 'cp-filter-trigger');
+        summary.append(
+            el('span', 'cp-filter-icon', '≡'),
+            el('span', '', 'Filter')
         );
 
-        const buttons = element('div', 'cp-filter-actions');
-        if (submit) {
-            buttons.append(submit);
+        const surface = el('div', 'cp-filter-surface');
+        const grid = el('div', 'cp-filter-grid');
+
+        function field(label, controls) {
+            const item = el('label', 'cp-filter-field');
+            item.append(
+                el('span', 'cp-filter-label', label)
+            );
+
+            const control = el('div', 'cp-filter-controls');
+            controls.filter(Boolean).forEach((node) => {
+                control.append(node);
+            });
+
+            item.append(control);
+            return item;
         }
+
+        grid.append(
+            field('Suchen', [search, searchIn]),
+            field('Sortierung', [sortBy, sortOrder]),
+            field('Links pro Seite', [perPage]),
+            field('Klicks', [clickFilter, clickLimit]),
+            field('Zeitraum', [dateFilter, dateFirst, dateSecond])
+        );
+
+        const actions = el('div', 'cp-filter-actions');
         if (clear) {
-            buttons.append(clear);
+            actions.append(clear);
+        }
+        if (submit) {
+            actions.append(submit);
         }
 
-        options.replaceChildren(grid, buttons);
-
-        const details = element('details', 'cp-filter-panel');
-        const summary = element('summary', '', 'Filter und Sortierung');
-        details.append(summary, filterForm);
+        options.replaceChildren(grid, actions);
+        surface.append(filterForm);
+        panel.append(summary, surface);
 
         const params = new URL(window.location.href).searchParams;
+
         if (
             params.get('search')
             || params.get('click_limit')
             || params.get('date_first')
         ) {
-            details.open = true;
+            panel.open = true;
         }
 
-        const toolbar = element('div', 'cp-links-toolbar');
-        const heading = element('div', 'cp-links-heading');
-        heading.append(
-            element('p', 'cp-eyebrow', 'Übersicht'),
-            element('h2', '', 'Deine Links')
-        );
-
-        toolbar.append(heading, details);
-        tableWrapper.before(toolbar);
-
-        const pagination = qs('#pagination');
-        if (pagination) {
-            pagination.classList.add('cp-pagination');
-            tableWrapper.after(pagination);
-        }
+        return panel;
     }
 
-    function translateLinkRowActions(root = document) {
-        const labels = {
-            button_stats: 'Statistik',
-            button_share: 'Teilen',
-            button_edit: 'Bearbeiten',
-            button_delete: 'Löschen',
-            button_qr: 'QR-Code'
-        };
+    function formatDates(table) {
+        qsa('td.timestamp', table).forEach((cell) => {
+            if (cell.dataset.cpDateFormatted === '1') {
+                return;
+            }
 
-        Object.entries(labels).forEach(([className, label]) => {
-            qsa(`.${className}`, root).forEach((link) => {
-                link.textContent = label;
-                link.setAttribute('aria-label', label);
-                link.setAttribute('title', label);
+            const stamp = qs('span.timestamp', cell);
+
+            if (!stamp) {
+                return;
+            }
+
+            const seconds = Number(normaliseText(stamp.textContent));
+
+            if (!Number.isFinite(seconds) || seconds <= 0) {
+                return;
+            }
+
+            const formatted = new Intl.DateTimeFormat(
+                'de-CH',
+                {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }
+            ).format(new Date(seconds * 1000));
+
+            Array.from(cell.childNodes).forEach((node) => {
+                if (node !== stamp) {
+                    node.remove();
+                }
             });
+
+            stamp.hidden = true;
+            cell.append(
+                document.createTextNode(formatted)
+            );
+            cell.dataset.cpDateFormatted = '1';
         });
     }
 
-    function enhanceMainTable() {
-        const table = qs('#main_table');
-
-        if (!table || table.dataset.cpEnhanced === '1') {
-            return;
-        }
-
-        table.dataset.cpEnhanced = '1';
-
-        const translations = [
+    function translateTableHeaders(table) {
+        const labels = [
             'Kurzlink',
             'Ziel',
             'Erstellt',
             'IP',
             'Klicks',
-            'Aktionen'
+            ''
         ];
 
         qsa('thead th', table).forEach((th, index) => {
-            const span = qs('span', th);
-            const text = translations[index];
+            const target = qs('span', th) || th;
 
-            if (text) {
-                if (span) {
-                    span.textContent = text;
-                } else {
-                    th.textContent = text;
-                }
+            if (typeof labels[index] === 'string') {
+                target.textContent = labels[index];
             }
         });
+    }
 
-        const wrapper = table.closest('.cp-table-scroll') || table.parentElement;
-        if (wrapper) {
-            wrapper.classList.add('cp-links-table-shell');
+    function enhanceRowActions(row) {
+        const cell = qs('td.actions', row);
+
+        if (!cell || qs('.cp-row-actions', cell)) {
+            return;
         }
 
-        enhanceFilterForm(wrapper);
-        translateLinkRowActions(table);
-        addResponsiveLabels(table);
+        const actions = qsa(
+            'a.button_stats, a.button_share, a.button_edit, a.button_delete, a.button_qr',
+            cell
+        );
+
+        if (!actions.length) {
+            return;
+        }
+
+        const labels = new Map([
+            ['button_stats', 'Statistik'],
+            ['button_share', 'Teilen'],
+            ['button_edit', 'Bearbeiten'],
+            ['button_delete', 'Löschen'],
+            ['button_qr', 'QR-Code herunterladen']
+        ]);
+
+        const details = el('details', 'cp-row-actions');
+        const summary = el('summary', 'cp-row-actions-trigger', '•••');
+        summary.setAttribute('aria-label', 'Aktionen öffnen');
+        summary.setAttribute('title', 'Aktionen');
+
+        const menu = el('div', 'cp-row-actions-menu');
+
+        actions.forEach((action) => {
+            const entry = document.createElement('a');
+            entry.href = action.getAttribute('href') || '#';
+            entry.id = action.id;
+            entry.className = action.className;
+            entry.onclick = action.onclick;
+
+            let label = 'Aktion';
+
+            for (const [className, text] of labels) {
+                if (action.classList.contains(className)) {
+                    label = text;
+                    break;
+                }
+            }
+
+            entry.textContent = label;
+            entry.title = label;
+
+            if (action.classList.contains('button_delete')) {
+                entry.classList.add('cp-danger-action');
+            }
+
+            menu.append(entry);
+        });
+
+        const hiddenInputs = qsa('input[type="hidden"]', cell);
+
+        cell.replaceChildren(details, ...hiddenInputs);
+        details.append(summary, menu);
+    }
+
+    function enhanceLinkRows(table) {
+        qsa('tbody tr', table).forEach((row) => {
+            enhanceRowActions(row);
+
+            const keywordCell = qs('td.keyword', row);
+            const keywordLink = keywordCell
+                ? qs('a', keywordCell)
+                : null;
+
+            if (
+                keywordCell
+                && keywordLink
+                && !qs('.cp-short-host', keywordCell)
+            ) {
+                const short = keywordLink.textContent.trim();
+
+                keywordCell.append(
+                    el(
+                        'small',
+                        'cp-short-host',
+                        `${window.location.host}/${short}`
+                    )
+                );
+            }
+        });
+    }
+
+    function buildLinksSection() {
+        const main = qs('main[role="main"]');
+        const table = qs('#main_table');
+
+        if (
+            !main
+            || !table
+            || table.dataset.cpV5 === '1'
+        ) {
+            return;
+        }
+
+        table.dataset.cpV5 = '1';
+
+        translateTableHeaders(table);
+        formatDates(table);
+        enhanceLinkRows(table);
+
+        const tfoot = qs('tfoot', table);
+        const pagination = qs('#pagination');
+        const filterPanel = buildFilterPanel();
+
+        if (tfoot) {
+            tfoot.hidden = true;
+        }
+
+        const previousWrapper = table.parentElement;
+
+        const section = el('section', 'cp-links-section');
+
+        const header = el('div', 'cp-section-header');
+        const copy = el('div');
+        copy.append(
+            el('p', 'cp-kicker', 'Übersicht'),
+            el('h2', '', 'Gespeicherte Links')
+        );
+
+        const tools = el('div', 'cp-section-tools');
+        if (filterPanel) {
+            tools.append(filterPanel);
+        }
+
+        header.append(copy, tools);
+
+        const tableShell = el('div', 'cp-table-shell');
+        tableShell.append(table);
+
+        section.append(header, tableShell);
+
+        if (pagination) {
+            pagination.classList.add('cp-pagination');
+            section.append(pagination);
+        }
+
+        if (
+            previousWrapper
+            && previousWrapper !== main
+            && previousWrapper.childElementCount === 0
+        ) {
+            previousWrapper.remove();
+        }
+
+        main.append(section);
 
         const tbody = qs('tbody', table);
 
-        if (tbody && !tbody.dataset.cpObserved) {
-            tbody.dataset.cpObserved = '1';
+        if (tbody && !tbody.dataset.cpV5Observer) {
+            tbody.dataset.cpV5Observer = '1';
 
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.nodeType !== Node.ELEMENT_NODE) {
-                            return;
-                        }
-
-                        translateLinkRowActions(node);
-                    });
-                });
-
-                addResponsiveLabels(table);
+            const observer = new MutationObserver(() => {
+                formatDates(table);
+                enhanceLinkRows(table);
             });
 
             observer.observe(tbody, {
@@ -502,186 +936,191 @@
         }
     }
 
-    function addResponsiveLabels(table) {
-        const headers = qsa('thead th', table).map((th) =>
-            th.textContent.trim()
-        );
+    function enhanceUsersPage() {
+        const main = qs('main[role="main"]');
+        const page = qs('.cp-users-page');
 
-        qsa('tbody tr', table).forEach((row) => {
-            qsa('td', row).forEach((cell, index) => {
-                if (headers[index]) {
-                    cell.dataset.label = headers[index];
-                }
-            });
-        });
-    }
-
-    function enhanceUserTable() {
-        const table = qs('.cp-users-list table');
-
-        if (!table || table.dataset.cpEnhanced === '1') {
+        if (!main || !page || page.dataset.cpV5 === '1') {
             return;
         }
 
-        table.dataset.cpEnhanced = '1';
+        page.dataset.cpV5 = '1';
 
-        if (!table.closest('.cp-table-scroll')) {
-            const shell = element('div', 'cp-table-scroll cp-users-table-shell');
-            table.before(shell);
-            shell.append(table);
+        const heading = qs('.cp-users-heading');
+        if (heading) {
+            const title = qs('h2', heading);
+            if (title) {
+                title.textContent = 'Benutzer';
+            }
+
+            heading.classList.add('cp-users-page-heading');
         }
 
-        addResponsiveLabels(table);
+        const table = qs('.cp-users-list table');
 
-        qsa('tbody tr', table).forEach((row) => {
-            const cells = qsa('td', row);
+        if (table) {
+            const shell = el('div', 'cp-table-shell cp-users-table-shell');
+            table.before(shell);
+            shell.append(table);
 
-            const role = cells[3];
-            const status = cells[4];
+            qsa('tbody tr', table).forEach((row) => {
+                const cells = qsa('td', row);
 
-            if (role && !qs('.cp-badge', role)) {
-                const text = role.textContent.trim();
-                role.replaceChildren(
-                    element(
-                        'span',
-                        text === 'Administrator'
-                            ? 'cp-badge cp-badge-admin'
-                            : 'cp-badge',
-                        text
-                    )
-                );
-            }
+                if (cells[3]) {
+                    const text = normaliseText(cells[3].textContent);
+                    cells[3].replaceChildren(
+                        el(
+                            'span',
+                            text === 'Administrator'
+                                ? 'cp-badge cp-badge-admin'
+                                : 'cp-badge',
+                            text
+                        )
+                    );
+                }
 
-            if (status && !qs('.cp-badge', status)) {
-                const text = status.textContent.trim();
-                status.replaceChildren(
-                    element(
-                        'span',
-                        text === 'Aktiv'
-                            ? 'cp-badge cp-badge-success'
-                            : 'cp-badge cp-badge-muted',
-                        text
-                    )
-                );
-            }
-        });
-    }
+                if (cells[4]) {
+                    const text = normaliseText(cells[4].textContent);
+                    cells[4].replaceChildren(
+                        el(
+                            'span',
+                            text === 'Aktiv'
+                                ? 'cp-badge cp-badge-success'
+                                : 'cp-badge cp-badge-muted',
+                            text
+                        )
+                    );
+                }
+            });
+        }
 
-    function enhanceUserEditDialogs() {
         qsa('details.cp-users-edit').forEach((details, index) => {
-            if (details.dataset.cpEnhanced === '1') {
-                return;
-            }
-
-            details.dataset.cpEnhanced = '1';
-
-            const summary = qs('summary', details);
             const form = qs('form', details);
 
-            if (!summary || !form) {
+            if (!form) {
                 return;
             }
 
-            const trigger = element('button', 'button cp-user-edit-trigger', 'Bearbeiten');
+            const trigger = el(
+                'button',
+                'button cp-user-edit-trigger',
+                'Bearbeiten'
+            );
             trigger.type = 'button';
 
-            const dialog = element('dialog', 'cp-modal cp-user-edit-modal');
-            dialog.id = `cp-user-edit-${index + 1}`;
-
-            const header = element('div', 'cp-modal-header');
-            const titleWrap = element('div');
-            titleWrap.append(
-                element('p', 'cp-eyebrow', 'Benutzerverwaltung'),
-                element('h2', '', 'Benutzer bearbeiten')
+            const dialog = el(
+                'dialog',
+                'cp-dialog cp-user-dialog'
             );
 
-            const close = element('button', 'cp-modal-close', '×');
+            const header = el('div', 'cp-dialog-header');
+            const copy = el('div');
+            copy.append(
+                el('p', 'cp-kicker', 'Benutzer'),
+                el('h2', '', 'Zugang bearbeiten')
+            );
+
+            const close = el(
+                'button',
+                'cp-dialog-close',
+                '×'
+            );
             close.type = 'button';
-            close.setAttribute('aria-label', 'Fenster schliessen');
+            close.setAttribute(
+                'aria-label',
+                'Dialog schliessen'
+            );
 
-            header.append(titleWrap, close);
+            header.append(copy, close);
 
-            const body = element('div', 'cp-modal-body');
+            const body = el('div', 'cp-dialog-body');
             body.append(form);
 
             dialog.append(header, body);
-
-            details.replaceWith(trigger);
             document.body.append(dialog);
 
-            trigger.addEventListener('click', () => dialog.showModal());
-            close.addEventListener('click', () => dialog.close());
+            details.replaceWith(trigger);
 
-            dialog.addEventListener('click', (event) => {
-                const rect = dialog.getBoundingClientRect();
+            trigger.addEventListener(
+                'click',
+                () => dialog.showModal()
+            );
 
-                if (
-                    event.clientX < rect.left
-                    || event.clientX > rect.right
-                    || event.clientY < rect.top
-                    || event.clientY > rect.bottom
-                ) {
-                    dialog.close();
-                }
-            });
+            close.addEventListener(
+                'click',
+                () => dialog.close()
+            );
         });
-    }
 
-    function enhanceUsersPage() {
-        const page = qs('.cp-users-page');
+        qsa('.cp-users-actions').forEach((actions) => {
+            if (actions.dataset.cpV5 === '1') {
+                return;
+            }
 
-        if (!page || page.dataset.cpEnhanced === '1') {
-            return;
-        }
+            actions.dataset.cpV5 = '1';
 
-        page.dataset.cpEnhanced = '1';
+            const details = el(
+                'details',
+                'cp-user-actions-menu'
+            );
+            const summary = el(
+                'summary',
+                'cp-row-actions-trigger',
+                '•••'
+            );
+            summary.setAttribute(
+                'aria-label',
+                'Benutzeraktionen öffnen'
+            );
 
-        const heading = qs('.cp-users-heading h2');
-        if (heading) {
-            heading.textContent = 'Benutzer verwalten';
-        }
+            const menu = el(
+                'div',
+                'cp-user-actions-surface'
+            );
 
-        enhanceUserTable();
-        enhanceUserEditDialogs();
+            Array.from(actions.children).forEach((child) => {
+                menu.append(child);
+            });
+
+            details.append(summary, menu);
+            actions.append(details);
+        });
     }
 
     function enhanceQrDialog() {
         const dialog = qs('#chromophobic-qr-dialog');
 
-        if (!dialog || dialog.dataset.cpEnhanced === '1') {
+        if (!dialog) {
             return;
         }
 
-        dialog.dataset.cpEnhanced = '1';
-        dialog.classList.add('cp-modal', 'cp-qr-modal');
-
-        const heading = qs('h2', dialog);
-        if (heading) {
-            heading.textContent = 'QR-Code herunterladen';
-        }
-
-        dialog.addEventListener('click', (event) => {
-            const rect = dialog.getBoundingClientRect();
-
-            if (
-                event.clientX < rect.left
-                || event.clientX > rect.right
-                || event.clientY < rect.top
-                || event.clientY > rect.bottom
-            ) {
-                dialog.close();
-            }
-        });
+        dialog.classList.add('cp-dialog', 'cp-qr-dialog');
     }
 
     function enhanceLogin() {
         const login = qs('#login');
 
-        if (!login || login.dataset.cpEnhanced === '1') {
-            return;
+        if (!login) {
+            return false;
         }
 
-        login.dataset.cpEnhanced = '1';
+        document.body.classList.add('cp-login-page');
+
+        const form = qs('form', login);
+
+        if (form && !qs('.cp-login-heading', form)) {
+            const heading = el('div', 'cp-login-heading');
+            heading.append(
+                el('p', 'cp-kicker', 'Chromophobic Links'),
+                el('h1', '', 'Anmelden'),
+                el(
+                    'p',
+                    'cp-card-description',
+                    'Kurzlinks und QR-Codes verwalten.'
+                )
+            );
+            form.prepend(heading);
+        }
 
         const username = qs('#username', login);
         const password = qs('#password', login);
@@ -701,64 +1140,46 @@
             submit.value = 'Anmelden';
         }
 
-        const form = qs('form', login);
-
-        if (form && !qs('.cp-login-intro', form)) {
-            const intro = element('div', 'cp-login-intro');
-            intro.append(
-                element('p', 'cp-eyebrow', 'Chromophobic Links'),
-                element('h1', '', 'Willkommen zurück'),
-                element(
-                    'p',
-                    'cp-card-copy',
-                    'Melde dich an, um Kurzlinks und QR-Codes zu verwalten.'
-                )
-            );
-
-            form.prepend(intro);
-        }
+        return true;
     }
 
-    function enhanceGenericTables() {
-        qsa('main table:not(#main_table):not(.cp-users-list table)').forEach((table) => {
-            if (table.dataset.cpGenericEnhanced === '1') {
-                return;
-            }
-
-            table.dataset.cpGenericEnhanced = '1';
-
-            if (!table.closest('.cp-table-scroll')) {
-                const shell = element('div', 'cp-table-scroll');
-                table.before(shell);
-                shell.append(table);
-            }
-        });
-    }
-
-    function enhanceDialogs() {
-        qsa('dialog').forEach((dialog) => {
-            if (!dialog.classList.contains('cp-modal')) {
-                dialog.classList.add('cp-modal');
-            }
+    function closeMenusOnOutsideClick() {
+        document.addEventListener('click', (event) => {
+            qsa(
+                '.cp-row-actions[open], .cp-user-actions-menu[open], .cp-filter[open]'
+            ).forEach((details) => {
+                if (!details.contains(event.target)) {
+                    details.open = false;
+                }
+            });
         });
     }
 
     function init() {
-        initBody();
-        enhanceBrand();
-        enhanceNavigation();
-        enhanceShortenerForm();
+        document.body.classList.add('cp-admin-v5');
+
+        const meta = readLegacyMeta();
+
+        if (enhanceLogin()) {
+            return;
+        }
+
+        buildAppHeader(meta);
+        buildPageHeader(meta);
+        enhanceShortener();
         enhanceShareBoxes();
-        enhanceMainTable();
+        buildLinksSection();
         enhanceUsersPage();
         enhanceQrDialog();
-        enhanceLogin();
-        enhanceGenericTables();
-        enhanceDialogs();
+        closeMenusOnOutsideClick();
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init, { once: true });
+        document.addEventListener(
+            'DOMContentLoaded',
+            init,
+            { once: true }
+        );
     } else {
         init();
     }
