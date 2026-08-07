@@ -156,7 +156,7 @@ function chromophobic_users_admin_page(): void
                 <span>Benutzername</span>
                 <input
                     type="text"
-                    name="username"
+                    name="new_username"
                     required
                     minlength="3"
                     maxlength="64"
@@ -200,7 +200,7 @@ function chromophobic_users_admin_page(): void
                 <span>Passwort</span>
                 <input
                     type="password"
-                    name="password"
+                    name="new_password"
                     required
                     minlength="12"
                     autocomplete="new-password"
@@ -309,7 +309,7 @@ function chromophobic_users_handle_create(): void
     );
 
     $username = trim(
-        (string) ($_POST['username'] ?? '')
+        (string) ($_POST['new_username'] ?? '')
     );
 
     $display_name = trim(
@@ -320,7 +320,7 @@ function chromophobic_users_handle_create(): void
         (string) ($_POST['email'] ?? '')
     );
 
-    $password = (string) ($_POST['password'] ?? '');
+    $password = (string) ($_POST['new_password'] ?? '');
 
     $role = ($_POST['role'] ?? '') === 'admin'
         ? 'admin'
