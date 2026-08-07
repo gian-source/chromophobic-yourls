@@ -20,25 +20,6 @@
     enhanceTables();
     enhanceDialogs();
 
-    function enhanceHeader() {
-        const header = document.querySelector("header");
-
-        if (!header || header.querySelector(".cp-window-controls")) {
-            return;
-        }
-
-        const controls = document.createElement("div");
-        controls.className = "cp-window-controls";
-        controls.setAttribute("aria-hidden", "true");
-
-        controls.innerHTML = `
-            <span class="cp-window-control cp-window-close"></span>
-            <span class="cp-window-control cp-window-minimise"></span>
-            <span class="cp-window-control cp-window-expand"></span>
-        `;
-
-        header.prepend(controls);
-    }
 
     function enhanceNavigation() {
         const navigation = document.querySelector("nav");
