@@ -4,7 +4,7 @@
 Plugin Name: Chromophobic Users
 Plugin URI: https://github.com/gian-source/chromophobic-yourls
 Description: Datenbankbasierte Benutzerverwaltung für Chromophobic YOURLS.
-Version: 0.3.0
+Version: 0.3.1
 Author: gian-source
 Author URI: https://github.com/gian-source
 */
@@ -1157,6 +1157,23 @@ function chromophobic_users_authenticate($pre)
         yourls_set_user($user->username);
         chromophobic_users_update_last_login((int) $user->id);
         chromophobic_users_maybe_rehash_password($user, $password);
+
+        // Da wir die Authentifizierung über shunt_is_valid_user komplett
+        // kurzschliessen, erreicht YOURLS seine eigene Cookie-Speicherung
+        // nicht mehr. Das Login-Cookie muss deshalb hier gesetzt werden.
+        if (!yourls_is_API()) {
+            yourls_store_cookie($user->username);
+
+            // POST -> Redirect -> GET, damit Zugangsdaten nicht erneut
+            // gesendet werden und die nächste Anfrage bereits das Cookie nutzt.
+            if (isset($_SERVER['REQUEST_URI'])) {
+                yourls_redirect(
+                    yourls_sanitize_url_safe((string) $_SERVER['REQUEST_URI']),
+                    303
+                );
+                exit;
+            }
+        }
 
         return true;
     }
