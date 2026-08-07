@@ -553,11 +553,15 @@ function chromophobic_users_handle_status(): void
     );
 
     if ((int) $updated > 0) {
-        chromophobic_users_notice(
-            $new_status === 'active'
-                ? 'Benutzer wurde aktiviert.'
-                : 'Benutzer wurde deaktiviert.',
-            'success'
+        $redirect_url = yourls_admin_url(
+            'plugins.php?page=chromophobic-users'
         );
+
+        yourls_redirect(
+            $redirect_url,
+            303
+        );
+
+        exit;
     }
 }
