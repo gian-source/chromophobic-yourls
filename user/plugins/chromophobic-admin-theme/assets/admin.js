@@ -954,8 +954,190 @@
         cell.append(details, ...hiddenInputs);
     }
 
+    function enhanceEditRows(table) {
+        qsa('tr.edit-row', table).forEach((row) => {
+            if (
+                row.dataset.cpV5 === '1'
+                || row.classList.contains('notfound')
+            ) {
+                return;
+            }
+
+            const longInput = qs(
+                'input[id^="edit-url-"]',
+                row
+            );
+            const keywordInput = qs(
+                'input[id^="edit-keyword-"]',
+                row
+            );
+            const titleInput = qs(
+                'input[id^="edit-title-"]',
+                row
+            );
+            const save = qs(
+                'input[id^="edit-submit-"]',
+                row
+            );
+            const cancel = qs(
+                'input[id^="edit-close-"]',
+                row
+            );
+
+            if (
+                !longInput
+                || !keywordInput
+                || !titleInput
+                || !save
+                || !cancel
+            ) {
+                return;
+            }
+
+            row.dataset.cpV5 = '1';
+            row.classList.add('cp-edit-row');
+
+            longInput.placeholder =
+                'https://example.com/zieladresse';
+            keywordInput.placeholder = 'kurzname';
+            titleInput.placeholder =
+                'Optionaler Titel des Links';
+
+            save.value = 'Speichern';
+            save.title = 'Änderungen speichern';
+            save.classList.add('cp-primary-button');
+
+            cancel.value = 'Abbrechen';
+            cancel.title = 'Bearbeitung abbrechen';
+
+            const hiddenInputs = qsa(
+                'input[type="hidden"]',
+                row
+            );
+
+            const cell = document.createElement('td');
+            cell.colSpan = 6;
+            cell.className = 'cp-inline-edit-cell';
+
+            const editor = el(
+                'div',
+                'cp-inline-editor'
+            );
+
+            const header = el(
+                'div',
+                'cp-inline-editor-header'
+            );
+
+            const headerCopy = el('div');
+            headerCopy.append(
+                el('p', 'cp-kicker', 'Link bearbeiten'),
+                el(
+                    'h3',
+                    '',
+                    'Ziel und Kurzlink anpassen'
+                ),
+                el(
+                    'p',
+                    'cp-inline-editor-description',
+                    'Änderungen wirken sofort nach dem Speichern.'
+                )
+            );
+
+            header.append(headerCopy);
+
+            const fields = el(
+                'div',
+                'cp-inline-editor-fields'
+            );
+
+            const longField = createField(
+                'Zieladresse',
+                longInput,
+                'Vollständige URL inklusive https://',
+                'cp-inline-long-field'
+            );
+
+            const aliasShell = el(
+                'div',
+                'cp-alias-control'
+            );
+            const aliasPrefix = el(
+                'span',
+                'cp-alias-prefix',
+                `${window.location.origin}/`
+            );
+            aliasShell.append(
+                aliasPrefix,
+                keywordInput
+            );
+
+            const aliasField = el(
+                'label',
+                'cp-form-field cp-inline-alias-field'
+            );
+            aliasField.append(
+                el(
+                    'span',
+                    'cp-form-label',
+                    'Kurzname'
+                ),
+                aliasShell,
+                el(
+                    'small',
+                    'cp-form-help',
+                    'Nur den Teil nach der Domain eingeben.'
+                )
+            );
+
+            const titleField = createField(
+                'Titel',
+                titleInput,
+                'Optional – hilft bei der Übersicht.',
+                'cp-inline-title-field'
+            );
+
+            fields.append(
+                longField,
+                aliasField,
+                titleField
+            );
+
+            const footer = el(
+                'div',
+                'cp-inline-editor-footer'
+            );
+
+            const hint = el(
+                'p',
+                'cp-inline-editor-hint',
+                'Wenn du den Kurznamen änderst, ändert sich auch die öffentliche Short-URL.'
+            );
+
+            const actions = el(
+                'div',
+                'cp-inline-editor-actions'
+            );
+            actions.append(cancel, save);
+
+            footer.append(hint, actions);
+
+            editor.append(
+                header,
+                fields,
+                footer,
+                ...hiddenInputs
+            );
+
+            cell.append(editor);
+            row.replaceChildren(cell);
+        });
+    }
+
     function enhanceLinkRows(table) {
-        qsa('tbody tr', table).forEach((row) => {
+        enhanceEditRows(table);
+
+        qsa('tbody tr:not(.edit-row)', table).forEach((row) => {
             enhanceRowActions(row);
 
             const keywordCell = qs('td.keyword', row);
@@ -1051,6 +1233,7 @@
             tbody.dataset.cpV5Observer = '1';
 
             const observer = new MutationObserver(() => {
+                enhanceEditRows(table);
                 formatDates(table);
                 enhanceLinkRows(table);
                 updateDashboardStats();

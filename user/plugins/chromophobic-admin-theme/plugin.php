@@ -4,7 +4,7 @@
 Plugin Name: Chromophobic Admin Theme
 Plugin URI: https://github.com/gian-source/chromophobic-yourls
 Description: Benutzerfreundliche Admin-Oberfläche für Chromophobic YOURLS.
-Version: 5.0.1
+Version: 5.0.2
 Author: gian-source
 Author URI: https://github.com/gian-source
 */
@@ -13,7 +13,7 @@ if (!defined('YOURLS_ABSPATH')) {
     die();
 }
 
-define('CHROMOPHOBIC_ADMIN_THEME_VERSION', '5.0.1');
+define('CHROMOPHOBIC_ADMIN_THEME_VERSION', '5.0.2');
 
 yourls_add_action(
     'html_head',
