@@ -113,6 +113,7 @@ function chromophobic_users_add_admin_link(array $links): array
 function chromophobic_users_admin_page(): void
 {
     chromophobic_users_handle_create();
+    chromophobic_users_handle_status();
 
     $users = chromophobic_users_get_all();
 
@@ -242,6 +243,7 @@ function chromophobic_users_admin_page(): void
                                 <th>Benutzername</th>
                                 <th>Rolle</th>
                                 <th>Status</th>
+                                <th>Aktionen</th>
                             </tr>
                         </thead>
 
@@ -278,6 +280,38 @@ function chromophobic_users_admin_page(): void
                                         ? 'Aktiv'
                                         : 'Deaktiviert';
                                     ?>
+                                </td>
+                                <td>
+                                    <form method="post">
+                                        <?php
+                                        yourls_nonce_field(
+                                            'chromophobic_users_status_' . $user->id
+                                        );
+                                        ?>
+
+                                        <input
+                                            type="hidden"
+                                            name="chromophobic_users_action"
+                                            value="toggle_status"
+                                        >
+
+                                        <input
+                                            type="hidden"
+                                            name="user_id"
+                                            value="<?php echo (int) $user->id; ?>"
+                                        >
+
+                                        <button
+                                            type="submit"
+                                            class="button"
+                                        >
+                                            <?php
+                                            echo $user->status === 'active'
+                                                ? 'Deaktivieren'
+                                                : 'Aktivieren';
+                                            ?>
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -449,4 +483,81 @@ function chromophobic_users_get_all(): array
         ORDER BY `display_name` ASC
         "
     );
+}
+/**
+ * Benutzer aktivieren oder deaktivieren.
+ */
+function chromophobic_users_handle_status(): void
+{
+    if (
+        ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
+        || ($_POST['chromophobic_users_action'] ?? '')
+            !== 'toggle_status'
+    ) {
+        return;
+    }
+
+    $user_id = (int) ($_POST['user_id'] ?? 0);
+
+    if ($user_id <= 0) {
+        return;
+    }
+
+    yourls_verify_nonce(
+        'chromophobic_users_status_' . $user_id
+    );
+
+    $table = CHROMOPHOBIC_USERS_TABLE;
+
+    $user = yourls_get_db(
+        'chromophobic-users-status-get'
+    )->fetchObject(
+        "
+        SELECT `id`, `status`
+        FROM `$table`
+        WHERE `id` = :id
+        LIMIT 1
+        ",
+        [
+            'id' => $user_id,
+        ]
+    );
+
+    if (!$user) {
+        chromophobic_users_notice(
+            'Benutzer wurde nicht gefunden.',
+            'error'
+        );
+        return;
+    }
+
+    $new_status = $user->status === 'active'
+        ? 'disabled'
+        : 'active';
+
+    $updated = yourls_get_db(
+        'chromophobic-users-status-update'
+    )->fetchAffected(
+        "
+        UPDATE `$table`
+        SET
+            `status` = :status,
+            `updated_at` = :updated_at
+        WHERE `id` = :id
+        ",
+        [
+            'status' => $new_status,
+            'updated_at' => date('Y-m-d H:i:s'),
+            'id' => $user_id,
+        ]
+    );
+
+    if ((int) $updated > 0) {
+        chromophobic_users_notice(
+            $new_status === 'active'
+                ? 'Benutzer wurde aktiviert.'
+                : 'Benutzer wurde deaktiviert.',
+            'success'
+        );
+    }
 }
