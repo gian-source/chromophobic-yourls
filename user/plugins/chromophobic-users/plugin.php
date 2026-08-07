@@ -120,15 +120,108 @@ function chromophobic_users_admin_page(): void
     <div class="cp-users-page">
 
         <div class="cp-users-heading">
-            <div>
-                <h2>Benutzer</h2>
-                <p>
-                    Verwalte Personen, die Zugriff auf
-                    den Link-Shortener erhalten sollen.
-                </p>
-            </div>
+    <div>
+        <h2>Benutzer</h2>
+        <p>
+            Verwalte Personen, die Zugriff auf
+            den Link-Shortener erhalten sollen.
+        </p>
+    </div>
+</div>
+
+<section class="cp-users-card">
+    <div class="cp-users-card-header">
+        <div>
+            <h3>Benutzer hinzufügen</h3>
+            <p>Neuen Zugang für den Shortener erstellen.</p>
+        </div>
+    </div>
+
+    <form method="post" class="cp-users-form">
+        <?php
+        yourls_nonce_field(
+        'chromophobic_users_create',
+        'chromophobic_users_nonce'
+    );
+        ?>
+
+        <input
+            type="hidden"
+            name="chromophobic_users_action"
+            value="create"
+        >
+
+        <div class="cp-users-form-grid">
+
+            <label>
+                <span>Benutzername</span>
+                <input
+                    type="text"
+                    name="username"
+                    required
+                    minlength="3"
+                    maxlength="64"
+                    autocomplete="off"
+                    placeholder="z. B. max"
+                >
+            </label>
+
+            <label>
+                <span>Anzeigename</span>
+                <input
+                    type="text"
+                    name="display_name"
+                    required
+                    maxlength="120"
+                    placeholder="Max Muster"
+                >
+            </label>
+
+            <label>
+                <span>E-Mail</span>
+                <input
+                    type="email"
+                    name="email"
+                    required
+                    maxlength="190"
+                    autocomplete="email"
+                    placeholder="max@example.com"
+                >
+            </label>
+
+            <label>
+                <span>Rolle</span>
+                <select name="role">
+                    <option value="user">Benutzer</option>
+                    <option value="admin">Administrator</option>
+                </select>
+            </label>
+
+            <label class="cp-users-password">
+                <span>Passwort</span>
+                <input
+                    type="password"
+                    name="password"
+                    required
+                    minlength="12"
+                    autocomplete="new-password"
+                >
+                <small>Mindestens 12 Zeichen</small>
+            </label>
+
         </div>
 
+        <div class="cp-users-form-actions">
+            <button
+                type="submit"
+                class="button primary"
+            >
+                Benutzer erstellen
+            </button>
+        </div>
+    </form>
+</section>
+        
         <div class="cp-users-layout">
 
             <section class="cp-users-card">
